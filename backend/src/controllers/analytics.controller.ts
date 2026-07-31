@@ -75,3 +75,44 @@ export async function getKpiStats(req: AuthRequest, res: Response, next: NextFun
     })
   } catch (err) { next(err) }
 }
+
+/* ── GET /analytics/my-kpi ── */
+/* Support agent's personal KPI. "Handled" = any ticket this agent has
+   acted on (status/priority change), taken from activity_logs since
+   tickets don't carry an agent_id column — only assigned_to_id, which
+   is the technician. */
+export async function getMyKpi(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const agentId = req.user!.userId
+
+    const [[{ handled }]] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT COUNT(DISTINCT entity_id) AS handled
+       FROM activity_logs
+       WHERE user_id = ? AND entity_type = 'ticket' AND action = 'UPDATE_TICKET'`,
+      [agentId]
+    )
+
+    const [[{ resolved, avg_resolution_hours }]] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT
+         COUNT(*) AS resolved,
+         AVG(TIMESTAMPDIFF(HOUR, t.created_at, t.resolved_at)) AS avg_resolution_hours
+       FROM tickets t
+       WHERE t.status IN ('resolved', 'closed')
+         AND t.resolved_at IS NOT NULL
+         AND t.id IN (
+           SELECT DISTINCT entity_id FROM activity_logs
+           WHERE user_id = ? AND entity_type = 'ticket' AND action = 'UPDATE_TICKET'
+         )`,
+      [agentId]
+    )
+
+    const resolutionRate = handled > 0 ? Math.round((resolved / handled) * 100) : 0
+
+    res.json({
+      tickets_handled: handled,
+      tickets_resolved: resolved,
+      resolution_rate: resolutionRate,
+      avg_resolution_hours: avg_resolution_hours ? Math.round(avg_resolution_hours * 10) / 10 : null,
+    })
+  } catch (err) { next(err) }
+}

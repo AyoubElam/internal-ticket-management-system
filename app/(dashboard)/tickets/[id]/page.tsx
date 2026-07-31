@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Clock, MapPin, MessageSquare,
-  Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2,
+  Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2, Wrench,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
@@ -16,10 +16,13 @@ import { cn } from '@/lib/utils'
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
 
+// Only admin/support_agent transitions now — technicians move a ticket
+// forward exclusively via PATCH /interventions/:id (traveling → in_progress
+// → completed), which itself syncs the ticket status server-side.
 const NEXT_STATUSES: Record<TicketStatus, TicketStatus[]> = {
   created:     ['assigned'],
-  assigned:    ['in_progress'],
-  in_progress: ['resolved'],
+  assigned:    [],           // technician moves this via Interventions, not here
+  in_progress: [],           // technician moves this via Interventions, not here
   resolved:    ['closed'],
   closed:      [],
   cancelled:   [],
@@ -151,14 +154,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const canComment = canEdit || ticket.created_by_id === user.id
   const canEditTicket = ticket.created_by_id === user.id && ticket.status === 'created'
 
-  // Technicians only manage status, and only on tickets assigned to them,
-  // and only the forward transitions assigned → in_progress → resolved.
   const isAssignedTechnician = isTechnician && ticket.assigned_to_id === user.id
-  const canManageStatus = canManage || isAssignedTechnician
-  const TECHNICIAN_ALLOWED = new Set(['in_progress', 'resolved'])
-  const visibleNextStatuses = isAssignedTechnician && !canManage
-    ? NEXT_STATUSES[ticket.status].filter(s => TECHNICIAN_ALLOWED.has(s))
-    : NEXT_STATUSES[ticket.status]
+  // Status/priority management panel is admin/support_agent only now.
+  // Technicians get a pointer to the Interventions page instead — see below.
+  const visibleNextStatuses = NEXT_STATUSES[ticket.status]
 
   async function patchTicket(body: Record<string, unknown>) {
     const token = localStorage.getItem('token')
@@ -201,11 +200,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  // Uses POST /interventions (not a plain PATCH) so assigning a technician
+  // here behaves the same as the Ticket Queue page: it both reassigns the
+  // ticket and creates the intervention/dispatch record the technician
+  // sees on the Interventions page.
   async function handleAssign(technicianId: number) {
     setManageError('')
     setAssigning(true)
     try {
-      await patchTicket({ assigned_to_id: technicianId })
+      const token = localStorage.getItem('token')
+      const res = await fetch('http://localhost:4000/api/interventions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ticket_id: ticket!.id, technician_id: technicianId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to assign technician.')
       fetchTicket()
     } catch (err: any) {
       setManageError(err.message || 'Something went wrong.')
@@ -415,50 +428,50 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             )}
           </div>
 
-          {/* Manage: assign + status + priority. Full panel for admin/support_agent;
-              status-only for the technician a ticket is assigned to. */}
-          {canManageStatus && (
+          {/* Manage: assign + status + priority. admin/support_agent ONLY now —
+              technicians no longer get status buttons here (their PATCH
+              /tickets/:id is blocked server-side). They get a pointer to
+              the Interventions page instead, right below. */}
+          {canManage && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground">Manage Ticket</h2>
 
               {manageError && <p className="text-xs text-destructive">{manageError}</p>}
 
-              {/* Assign to technician — admin/support_agent only */}
-              {canManage && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">Assign to Technician</label>
-                  {technicians.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No technicians available.</p>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      {technicians.map(tech => (
-                        <button
-                          key={tech.id}
-                          onClick={() => handleAssign(tech.id)}
-                          disabled={assigning || tech.id === ticket.assigned_to_id}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors',
-                            tech.id === ticket.assigned_to_id
-                              ? 'border-primary bg-primary/10 cursor-default'
-                              : 'border-border hover:border-primary/50 hover:bg-accent disabled:opacity-60'
-                          )}
-                        >
-                          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                            {getInitials(tech.first_name, tech.last_name)}
-                          </div>
-                          <span className="text-xs text-foreground">{tech.first_name} {tech.last_name}</span>
-                          {tech.id === ticket.assigned_to_id && (
-                            <span className="text-[10px] text-primary ml-auto">Current</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Assign to technician. Calls POST /interventions, same as
+                  the Ticket Queue page, so it also creates the
+                  intervention/dispatch record. */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Assign to Technician</label>
+                {technicians.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No technicians available.</p>
+                ) : ticket.assigned_to_id ? (
+                  <p className="text-xs text-muted-foreground">
+                    Already assigned to {ticket.assigned_to_name}. Reassignment isn't supported yet —
+                    manage further progress from the Interventions page.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {technicians.map(tech => (
+                      <button
+                        key={tech.id}
+                        onClick={() => handleAssign(tech.id)}
+                        disabled={assigning}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors border-border hover:border-primary/50 hover:bg-accent disabled:opacity-60"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                          {getInitials(tech.first_name, tech.last_name)}
+                        </div>
+                        <span className="text-xs text-foreground">{tech.first_name} {tech.last_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              {/* Status progression — everyone in canManageStatus sees this,
-                  but the list is pre-filtered for technicians. */}
+              {/* Status progression — created→assigned and resolved→closed
+                  only. assigned→in_progress→resolved now happens via the
+                  technician's intervention, not here. */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground">Status</label>
                 {visibleNextStatuses.length > 0 ? (
@@ -475,6 +488,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       </button>
                     ))}
                   </div>
+                ) : ['assigned', 'in_progress'].includes(ticket.status) ? (
+                  <p className="text-xs text-muted-foreground">
+                    In progress on the technician's side — check the{' '}
+                    <Link href="/interventions" className="text-primary hover:underline">Interventions page</Link>{' '}
+                    for live status and their closing report.
+                  </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     This ticket is {ticket.status} — no further transitions available.
@@ -482,30 +501,47 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 )}
               </div>
 
-              {/* Priority selector — admin/support_agent only */}
-              {canManage && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {PRIORITIES.map(p => (
-                      <button
-                        key={p}
-                        onClick={() => handlePriorityChange(p)}
-                        disabled={updatingPriority || p === ticket.priority}
-                        className={cn(
-                          'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize',
-                          p === ticket.priority
-                            ? 'bg-primary/10 border-primary text-primary cursor-default'
-                            : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60'
-                        )}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
+              {/* Priority selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {PRIORITIES.map(p => (
+                    <button
+                      key={p}
+                      onClick={() => handlePriorityChange(p)}
+                      disabled={updatingPriority || p === ticket.priority}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize',
+                        p === ticket.priority
+                          ? 'bg-primary/10 border-primary text-primary cursor-default'
+                          : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60'
+                      )}
+                    >
+                      {p}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
+          )}
+
+          {/* Technician's own assigned ticket: no status controls here anymore —
+              point them to the Interventions page where they actually work. */}
+          {isAssignedTechnician && (
+            <Link
+              href="/interventions"
+              className="flex items-center gap-3 bg-card border border-border rounded-xl p-5 hover:border-primary/40 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Wrench className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Update your intervention</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Log status (traveling / in progress / completed) and your closing report from the Interventions page.
+                </p>
+              </div>
+            </Link>
           )}
 
           {/* Comments */}

@@ -10,12 +10,6 @@ function paginate(page?: string | number, limit?: string | number) {
   return { offset: (p - 1) * l, limit: l, page: p }
 }
 
-// Transitions a technician is allowed to make on a ticket assigned to them.
-const TECHNICIAN_TRANSITIONS: Record<string, string[]> = {
-  assigned:    ['in_progress'],
-  in_progress: ['resolved'],
-}
-
 const STATUS_VERB: Record<string, string> = {
   created:     'created',
   assigned:    'assigned to a technician',
@@ -190,24 +184,22 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     const ticket = rows[0]
     if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
 
-    const role = req.user!.role
+    // Technicians no longer PATCH tickets directly — their status changes
+    // go through PATCH /interventions/:id, which syncs the ticket status
+    // itself. Route-level authorize() also excludes technician now; this
+    // is a defense-in-depth check in case that ever drifts.
+    if (req.user!.role === 'technician') {
+      res.status(403).json({ error: 'Technicians update status via their assigned intervention, not directly.' })
+      return
+    }
 
-    // Technicians: status-only, only on tickets assigned to them, only the
-    // forward transitions assigned → in_progress → resolved.
-    if (role === 'technician') {
-      if (ticket.assigned_to_id !== req.user!.userId) {
-        res.status(403).json({ error: 'You can only update tickets assigned to you.' })
-        return
-      }
-      if (assigned_to_id !== undefined || priority !== undefined || zone_id !== undefined) {
-        res.status(403).json({ error: 'Technicians can only update ticket status.' })
-        return
-      }
-      const allowed = TECHNICIAN_TRANSITIONS[ticket.status] || []
-      if (!status || !allowed.includes(status)) {
-        res.status(400).json({ error: `Cannot move ticket from ${ticket.status} to ${status ?? '(none)'}.` })
-        return
-      }
+    // assigned_to_id is no longer settable here either — assignment only
+    // happens through POST /interventions, which also creates the
+    // dispatch record. Setting it here would silently orphan a ticket
+    // from an intervention row.
+    if (assigned_to_id !== undefined) {
+      res.status(400).json({ error: 'Use POST /interventions to assign a technician, not PATCH /tickets/:id.' })
+      return
     }
 
     const fields: string[] = []
@@ -240,16 +232,6 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     )
 
     // Notifications
-    if (assigned_to_id) {
-      await notifyUsers(
-        [ticket.created_by_id],
-        `Your ticket #${id} has been assigned to a technician.`
-      )
-      await notifyUsers(
-        [assigned_to_id],
-        `You've been assigned to ticket #${id}: ${ticket.title}`
-      )
-    }
     if (status && status !== ticket.status) {
       const verb = STATUS_VERB[status] ?? status
       await notifyUsers(
