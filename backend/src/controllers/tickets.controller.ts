@@ -1,0 +1,396 @@
+import type { Response, NextFunction } from 'express'
+import pool from '../config/database'
+import type { AuthRequest, TicketStatus, TicketPriority, TicketCategory } from '../types'
+import mysql from 'mysql2/promise'
+
+/* ── helpers ── */
+function paginate(page?: string | number, limit?: string | number) {
+  const p = Math.max(1, Number(page) || 1)
+  const l = Math.min(100, Math.max(1, Number(limit) || 20))
+  return { offset: (p - 1) * l, limit: l, page: p }
+}
+
+// Transitions a technician is allowed to make on a ticket assigned to them.
+const TECHNICIAN_TRANSITIONS: Record<string, string[]> = {
+  assigned:    ['in_progress'],
+  in_progress: ['resolved'],
+}
+
+const STATUS_VERB: Record<string, string> = {
+  created:     'created',
+  assigned:    'assigned to a technician',
+  in_progress: 'marked as in progress',
+  resolved:    'resolved',
+  closed:      'closed',
+  cancelled:   'cancelled',
+}
+
+async function notifyUsers(userIds: number[], message: string): Promise<void> {
+  const unique = [...new Set(userIds)].filter(Boolean)
+  if (!unique.length) return
+  const values = unique.map((id) => [id, message, 0])
+  await pool.query(
+    `INSERT INTO notifications (user_id, message, is_read) VALUES ?`,
+    [values]
+  )
+}
+
+/* ── GET /tickets ── */
+export async function listTickets(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { page, limit, status, priority, category, zone_id } = req.query as Record<string, string>
+    const { offset, limit: lim } = paginate(page, limit)
+
+    const where: string[] = []
+    const params: unknown[] = []
+
+    if (req.user!.role === 'employee') {
+      where.push('t.created_by_id = ?')
+      params.push(req.user!.userId)
+    }
+    if (req.user!.role === 'technician') {
+      where.push('t.assigned_to_id = ?')
+      params.push(req.user!.userId)
+    }
+
+    if (status)   { where.push('t.status = ?');   params.push(status) }
+    if (priority) { where.push('t.priority = ?'); params.push(priority) }
+    if (category) { where.push('t.category = ?'); params.push(category) }
+    if (zone_id)  { where.push('t.zone_id = ?');  params.push(zone_id) }
+
+    const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT
+         t.*,
+         CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
+         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
+         z.name AS zone_name,
+         COUNT(c.id) AS comments_count
+       FROM tickets t
+       LEFT JOIN users  cb ON cb.id = t.created_by_id
+       LEFT JOIN users  ab ON ab.id = t.assigned_to_id
+       LEFT JOIN zones  z  ON z.id  = t.zone_id
+       LEFT JOIN comments c ON c.ticket_id = t.id
+       ${whereSQL}
+       GROUP BY t.id
+       ORDER BY t.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, lim, offset]
+    )
+
+    const [[{ total }]] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM tickets t ${whereSQL}`,
+      params
+    )
+
+    res.json({ data: rows, total, page: Number(page) || 1, limit: lim })
+  } catch (err) { next(err) }
+}
+
+/* ── GET /tickets/:id ── */
+export async function getTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT t.*,
+         CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
+         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
+         z.name AS zone_name
+       FROM tickets t
+       LEFT JOIN users cb ON cb.id = t.created_by_id
+       LEFT JOIN users ab ON ab.id = t.assigned_to_id
+       LEFT JOIN zones z  ON z.id  = t.zone_id
+       WHERE t.id = ?`,
+      [id]
+    )
+    if (!rows[0]) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    if (req.user!.role === 'employee' && rows[0].created_by_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Forbidden.' }); return
+    }
+    // Technicians may only open tickets assigned to them.
+    if (req.user!.role === 'technician' && rows[0].assigned_to_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Forbidden.' }); return
+    }
+
+    const [comments] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT c.*, CONCAT(u.first_name, ' ', u.last_name) AS user_name, u.role AS user_role
+       FROM comments c JOIN users u ON u.id = c.user_id
+       WHERE c.ticket_id = ?
+       ORDER BY c.created_at ASC`,
+      [id]
+    )
+
+    // Hide internal notes from anyone who isn't admin/support_agent
+    const isStaff = req.user!.role === 'admin' || req.user!.role === 'support_agent'
+    const visibleComments = isStaff ? comments : comments.filter(c => !c.is_internal)
+
+    res.json({ ...rows[0], comments: visibleComments })
+  } catch (err) { next(err) }
+}
+
+/* ── POST /tickets ── */
+export async function createTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { title, description, category, priority, zone_id } = req.body as {
+      title: string; description: string
+      category: TicketCategory; priority: TicketPriority; zone_id?: number
+    }
+
+    const [result] = await pool.query<mysql.ResultSetHeader>(
+      `INSERT INTO tickets (title, description, category, priority, status, created_by_id, zone_id)
+       VALUES (?, ?, ?, ?, 'created', ?, ?)`,
+      [title, description, category, priority, req.user!.userId, zone_id ?? null]
+    )
+
+    const ticketId = result.insertId
+
+    // Activity log
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'CREATE_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, ticketId, `Created ticket: ${title}`]
+    )
+
+    // Notify all admins and support agents
+    const [staff] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id FROM users WHERE role IN ('admin', 'support_agent')`
+    )
+
+    if (staff.length > 0) {
+      const notifMessage = priority === 'critical'
+        ? `New critical ticket #${ticketId} requires immediate attention.`
+        : `New ticket #${ticketId} has been submitted.`
+
+      const values = staff.map((u) => [u.id, notifMessage, 0])
+      await pool.query(
+        `INSERT INTO notifications (user_id, message, is_read) VALUES ?`,
+        [values]
+      )
+    }
+
+    res.status(201).json({ id: ticketId, message: 'Ticket created.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /tickets/:id ── */
+export async function updateTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+    const { status, assigned_to_id, priority, zone_id } = req.body as {
+      status?: TicketStatus; assigned_to_id?: number; priority?: TicketPriority; zone_id?: number
+    }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, title, status, assigned_to_id, created_by_id FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    const role = req.user!.role
+
+    // Technicians: status-only, only on tickets assigned to them, only the
+    // forward transitions assigned → in_progress → resolved.
+    if (role === 'technician') {
+      if (ticket.assigned_to_id !== req.user!.userId) {
+        res.status(403).json({ error: 'You can only update tickets assigned to you.' })
+        return
+      }
+      if (assigned_to_id !== undefined || priority !== undefined || zone_id !== undefined) {
+        res.status(403).json({ error: 'Technicians can only update ticket status.' })
+        return
+      }
+      const allowed = TECHNICIAN_TRANSITIONS[ticket.status] || []
+      if (!status || !allowed.includes(status)) {
+        res.status(400).json({ error: `Cannot move ticket from ${ticket.status} to ${status ?? '(none)'}.` })
+        return
+      }
+    }
+
+    const fields: string[] = []
+    const params: unknown[] = []
+
+    if (status)         { fields.push('status = ?');         params.push(status) }
+    if (assigned_to_id) { fields.push('assigned_to_id = ?'); params.push(assigned_to_id) }
+    if (priority)       { fields.push('priority = ?');       params.push(priority) }
+    if (zone_id)        { fields.push('zone_id = ?');        params.push(zone_id) }
+
+    if (status === 'resolved' || status === 'closed') {
+      fields.push('resolved_at = NOW()')
+    }
+
+    if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
+
+    fields.push('updated_at = NOW()')
+    params.push(id)
+
+    await pool.query(
+      `UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`,
+      params
+    )
+
+    // Activity log
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'UPDATE_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, id, `Updated: ${JSON.stringify(req.body)}`]
+    )
+
+    // Notifications
+    if (assigned_to_id) {
+      await notifyUsers(
+        [ticket.created_by_id],
+        `Your ticket #${id} has been assigned to a technician.`
+      )
+      await notifyUsers(
+        [assigned_to_id],
+        `You've been assigned to ticket #${id}: ${ticket.title}`
+      )
+    }
+    if (status && status !== ticket.status) {
+      const verb = STATUS_VERB[status] ?? status
+      await notifyUsers(
+        [ticket.created_by_id],
+        `Your ticket #${id} has been ${verb}.`
+      )
+    }
+
+    res.json({ message: 'Ticket updated.' })
+  } catch (err) { next(err) }
+}
+
+/* ── POST /tickets/:id/comments ── */
+export async function addComment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+    const { content, is_internal } = req.body as { content: string; is_internal?: boolean }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, created_by_id, assigned_to_id FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    const role = req.user!.role
+    if (role === 'employee' && ticket.created_by_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Forbidden.' }); return
+    }
+    if (role === 'technician' && ticket.assigned_to_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Forbidden.' }); return
+    }
+
+    const internal = (role === 'admin' || role === 'support_agent')
+      ? (is_internal ?? false)
+      : false
+
+    const [result] = await pool.query<mysql.ResultSetHeader>(
+      `INSERT INTO comments (ticket_id, user_id, content, is_internal)
+       VALUES (?, ?, ?, ?)`,
+      [id, req.user!.userId, content, internal]
+    )
+
+    // Notify the other party. Internal notes are staff-only visibility,
+    // so the employee creator never gets pinged about those.
+    const recipients = new Set<number>()
+    if (ticket.created_by_id !== req.user!.userId) recipients.add(ticket.created_by_id)
+    if (ticket.assigned_to_id && ticket.assigned_to_id !== req.user!.userId) recipients.add(ticket.assigned_to_id)
+    if (internal) recipients.delete(ticket.created_by_id)
+    await notifyUsers([...recipients], `New comment on ticket #${id}.`)
+
+    res.status(201).json({ id: result.insertId, message: 'Comment added.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /tickets/:id/edit (employee edits their own ticket, only while status = 'created') ── */
+export async function editTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+    const { title, description, category, priority } = req.body as {
+      title?: string; description?: string; category?: TicketCategory; priority?: TicketPriority
+    }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, created_by_id FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    // Only the creator can edit
+    if (ticket.created_by_id !== req.user!.userId) {
+      res.status(403).json({ error: 'You can only edit your own tickets.' }); return
+    }
+
+    // Only editable while still in 'created' status
+    if (ticket.status !== 'created') {
+      res.status(400).json({ error: 'This ticket can no longer be edited because it is already being handled.' })
+      return
+    }
+
+    const fields: string[] = []
+    const params: unknown[] = []
+
+    if (title)       { fields.push('title = ?');       params.push(title) }
+    if (description) { fields.push('description = ?'); params.push(description) }
+    if (category)    { fields.push('category = ?');    params.push(category) }
+    if (priority)    { fields.push('priority = ?');     params.push(priority) }
+
+    if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
+
+    fields.push('updated_at = NOW()')
+    params.push(id)
+
+    await pool.query(
+      `UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`,
+      params
+    )
+
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'EDIT_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, id, `Edited: ${JSON.stringify(req.body)}`]
+    )
+
+    res.json({ message: 'Ticket updated.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /tickets/:id/cancel (employee cancels their own ticket, only while status = 'created') ── */
+export async function cancelTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, created_by_id FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    if (ticket.created_by_id !== req.user!.userId) {
+      res.status(403).json({ error: 'You can only cancel your own tickets.' }); return
+    }
+
+    if (ticket.status !== 'created') {
+      res.status(400).json({ error: 'This ticket can no longer be cancelled because it is already being handled.' })
+      return
+    }
+
+    await pool.query(
+      `UPDATE tickets SET status = 'cancelled', updated_at = NOW() WHERE id = ?`,
+      [id]
+    )
+
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'CANCEL_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, id, 'Ticket cancelled by requester']
+    )
+
+    res.json({ message: 'Ticket cancelled.' })
+  } catch (err) { next(err) }
+}
