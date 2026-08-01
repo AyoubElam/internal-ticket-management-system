@@ -6,11 +6,14 @@ import mysql from 'mysql2/promise'
 export async function listZones(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT z.*,
-         COUNT(DISTINCT CASE WHEN u.role = 'technician'   AND u.is_active = 1 THEN u.id END) AS technician_count,
-         COUNT(DISTINCT CASE WHEN u.role = 'support_agent' AND u.is_active = 1 THEN u.id END) AS agent_count,
-         COUNT(DISTINCT CASE WHEN t.status NOT IN ('resolved','closed') THEN t.id END) AS open_ticket_count,
-         COUNT(DISTINCT CASE WHEN t.status NOT IN ('resolved','closed') AND t.priority = 'critical' THEN t.id END) AS critical_ticket_count
+      `SELECT z.id,
+         z.name,
+         z.region,
+         z.created_at AS createdAt,
+         COUNT(DISTINCT CASE WHEN u.role = 'technician'   AND u.is_active = 1 THEN u.id END) AS technicianCount,
+         COUNT(DISTINCT CASE WHEN u.role = 'support_agent' AND u.is_active = 1 THEN u.id END) AS agentCount,
+         COUNT(DISTINCT CASE WHEN t.status NOT IN ('resolved','closed') THEN t.id END) AS openTicketCount,
+         COUNT(DISTINCT CASE WHEN t.status NOT IN ('resolved','closed') AND t.priority = 'critical' THEN t.id END) AS criticalTicketCount
        FROM zones z
        LEFT JOIN users u   ON u.zone_id = z.id
        LEFT JOIN tickets t ON t.zone_id = z.id
@@ -25,7 +28,7 @@ export async function listZoneTechnicians(req: AuthRequest, res: Response, next:
   try {
     const { id } = req.params
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT id, first_name, last_name, role
+      `SELECT id, first_name AS firstName, last_name AS lastName, role
        FROM users
        WHERE zone_id = ? AND is_active = 1 AND role IN ('technician','support_agent')
        ORDER BY role, first_name`,

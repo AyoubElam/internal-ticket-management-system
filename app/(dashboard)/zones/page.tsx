@@ -5,22 +5,29 @@ import { MapPin, Shield, Plus, Search, Loader2, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { formatDateShort } from '@/lib/helpers'
 
+const API_URL = 'http://localhost:4000/api'
+
 interface Zone {
   id: number
   name: string
   region: string
-  created_at: string
-  technician_count: number
-  agent_count: number
-  open_ticket_count: number
-  critical_ticket_count: number
+  createdAt: string
+  technicianCount: number
+  agentCount: number
+  openTicketCount: number
+  criticalTicketCount: number
 }
 
 interface ZoneTechnician {
   id: number
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   role: 'technician' | 'support_agent'
+}
+
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 export default function ZonesPage() {
@@ -45,8 +52,8 @@ export default function ZonesPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/zones', { credentials: 'include' })
-      if (!res.ok) throw new Error('Failed to load zones.')
+      const res = await fetch(`${API_URL}/zones`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`Failed to load zones (${res.status}).`)
       const data: Zone[] = await res.json()
       setZones(data)
 
@@ -54,7 +61,7 @@ export default function ZonesPage() {
       const entries = await Promise.all(
         data.map(async z => {
           try {
-            const r = await fetch(`/api/zones/${z.id}/technicians`, { credentials: 'include' })
+            const r = await fetch(`${API_URL}/zones/${z.id}/technicians`, { headers: authHeaders() })
             if (!r.ok) return [z.id, []] as const
             const list: ZoneTechnician[] = await r.json()
             return [z.id, list] as const
@@ -110,10 +117,9 @@ export default function ZonesPage() {
     setFormError(null)
     try {
       const isEdit = !!editingZone
-      const res = await fetch(isEdit ? `/api/zones/${editingZone!.id}` : '/api/zones', {
+      const res = await fetch(`${API_URL}/zones${isEdit ? `/${editingZone!.id}` : ''}`, {
         method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ name: formName.trim(), region: formRegion.trim() }),
       })
       const body = await res.json().catch(() => ({}))
@@ -133,8 +139,8 @@ export default function ZonesPage() {
     return z.name.toLowerCase().includes(q) || z.region.toLowerCase().includes(q)
   })
 
-  const totalActiveTechs = zones.reduce((sum, z) => sum + z.technician_count, 0)
-  const totalOpenTickets = zones.reduce((sum, z) => sum + z.open_ticket_count, 0)
+  const totalActiveTechs = zones.reduce((sum, z) => sum + z.technicianCount, 0)
+  const totalOpenTickets = zones.reduce((sum, z) => sum + z.openTicketCount, 0)
 
   return (
     <div className="space-y-5">
@@ -212,9 +218,9 @@ export default function ZonesPage() {
                       <p className="text-xs text-muted-foreground truncate">{zone.region}</p>
                     </div>
                   </div>
-                  {zone.critical_ticket_count > 0 && (
+                  {zone.criticalTicketCount > 0 && (
                     <span className="shrink-0 text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 rounded-full px-2 py-0.5">
-                      {zone.critical_ticket_count} critical
+                      {zone.criticalTicketCount} critical
                     </span>
                   )}
                 </div>
@@ -222,15 +228,15 @@ export default function ZonesPage() {
                 {/* Stats grid */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-muted/50 rounded-lg p-2.5 text-center">
-                    <p className="text-lg font-bold text-foreground">{zone.open_ticket_count}</p>
+                    <p className="text-lg font-bold text-foreground">{zone.openTicketCount}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Open Tickets</p>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-2.5 text-center">
-                    <p className="text-lg font-bold text-foreground">{zone.technician_count}</p>
+                    <p className="text-lg font-bold text-foreground">{zone.technicianCount}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Technicians</p>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-2.5 text-center">
-                    <p className="text-lg font-bold text-foreground">{zone.agent_count}</p>
+                    <p className="text-lg font-bold text-foreground">{zone.agentCount}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Agents</p>
                   </div>
                 </div>
@@ -243,9 +249,9 @@ export default function ZonesPage() {
                       {zoneTechs.map(tech => (
                         <span key={tech.id} className="flex items-center gap-1 bg-muted/60 rounded-full px-2.5 py-1 text-[11px] text-foreground">
                           <span className="w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold flex items-center justify-center">
-                            {tech.first_name[0]}{tech.last_name[0]}
+                            {tech.firstName[0]}{tech.lastName[0]}
                           </span>
-                          {tech.first_name} {tech.last_name}
+                          {tech.firstName} {tech.lastName}
                         </span>
                       ))}
                     </div>
@@ -254,7 +260,7 @@ export default function ZonesPage() {
 
                 {/* Footer */}
                 <div className="flex items-center justify-between pt-1 border-t border-border">
-                  <p className="text-[10px] text-muted-foreground">Created {formatDateShort(zone.created_at)}</p>
+                  <p className="text-[10px] text-muted-foreground">Created {formatDateShort(zone.createdAt)}</p>
                   {user.role === 'admin' && (
                     <button
                       onClick={() => openEditModal(zone)}
