@@ -59,6 +59,25 @@ export async function getKpiStats(req: AuthRequest, res: Response, next: NextFun
       FROM tickets
     `)
 
+    // Same SLA thresholds, broken out per priority — powers the 4 SLA bars
+    // on the analytics page, which used to be hardcoded fake numbers.
+    const [slaByPriority] = await pool.query<mysql.RowDataPacket[]>(`
+      SELECT
+        priority,
+        COUNT(*) AS total,
+        ROUND(100.0 * SUM(
+          CASE
+            WHEN priority = 'critical' AND TIMESTAMPDIFF(HOUR, created_at, COALESCE(resolved_at, NOW())) <= 4   THEN 1
+            WHEN priority = 'high'     AND TIMESTAMPDIFF(HOUR, created_at, COALESCE(resolved_at, NOW())) <= 24  THEN 1
+            WHEN priority = 'medium'   AND TIMESTAMPDIFF(HOUR, created_at, COALESCE(resolved_at, NOW())) <= 72  THEN 1
+            WHEN priority = 'low'      AND TIMESTAMPDIFF(HOUR, created_at, COALESCE(resolved_at, NOW())) <= 168 THEN 1
+            ELSE 0
+          END
+        ) / COUNT(*), 1) AS compliance
+      FROM tickets
+      GROUP BY priority
+    `)
+
     res.json({
       totalTickets:         totals.total_tickets,
       openTickets:          totals.open_tickets,
@@ -68,6 +87,7 @@ export async function getKpiStats(req: AuthRequest, res: Response, next: NextFun
         : 0,
       criticalOpen:         totals.critical_open,
       slaCompliance:        sla.sla_compliance ?? 0,
+      slaByPriority:        slaByPriority,
       byStatus:             byStatus,
       byPriority:           byPriority,
       byCategory:           byCategory,

@@ -2,16 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Wifi, Lock, Mail, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Wifi, AlertCircle, ChevronDown, Loader2, Shield, Headset, Wrench, User } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { ROLE_LABELS } from '@/lib/helpers'
 import type { Role } from '@/lib/types'
 
-const DEMO_ACCOUNTS: { email: string; role: Role; label: string }[] = [
-  { email: 'admin@wifimaroc.ma',  role: 'admin',         label: 'Administrator' },
-  { email: 'agent1@wifimaroc.ma', role: 'support_agent', label: 'Support Agent' },
-  { email: 'tech1@wifimaroc.ma',  role: 'technician',    label: 'Technician' },
-  { email: 'emp1@wifimaroc.ma',   role: 'employee',      label: 'Employee' },
+const DEMO_ACCOUNTS: { email: string; role: Role; label: string; icon: React.ReactNode }[] = [
+  { email: 'admin@wifimaroc.ma',  role: 'admin',         label: 'Admin',      icon: <Shield className="w-3 h-3" /> },
+  { email: 'agent1@wifimaroc.ma', role: 'support_agent', label: 'Agent',      icon: <Headset className="w-3 h-3" /> },
+  { email: 'tech1@wifimaroc.ma',  role: 'technician',    label: 'Technician', icon: <Wrench className="w-3 h-3" /> },
+  { email: 'emp1@wifimaroc.ma',   role: 'employee',      label: 'Employee',   icon: <User className="w-3 h-3" /> },
 ]
 
 export default function LoginPage() {
@@ -23,8 +22,8 @@ export default function LoginPage() {
   const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [showDemo, setShowDemo] = useState(false)
 
-  // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) {
       router.replace('/dashboard')
@@ -48,137 +47,59 @@ export default function LoginPage() {
     setEmail(demoEmail)
     setPassword('Password123!')
     setError('')
+    setShowDemo(false)
   }
 
   if (loading) return null
 
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-sidebar flex-col justify-between p-12 relative overflow-hidden">
-        {/* Background grid */}
-        <div
-          className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: `linear-gradient(oklch(0.88 0 0) 1px, transparent 1px), linear-gradient(90deg, oklch(0.88 0 0) 1px, transparent 1px)`,
-            backgroundSize: '40px 40px',
-          }}
-        />
-        {/* Brand */}
-        <div className="relative flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-            <Wifi className="w-5 h-5 text-white" />
+    <div className="min-h-screen flex items-center justify-center bg-background px-6 relative overflow-hidden">
+      {/* Soft glow behind everything — subtle depth without a full split panel */}
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[560px] rounded-full pointer-events-none"
+        style={{
+          background: 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)',
+          opacity: 0.06,
+        }}
+      />
+
+      <div className="w-full max-w-sm relative">
+        {/* Logo */}
+        <div className="flex flex-col items-center text-center mb-7">
+          <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+            <Wifi className="w-5 h-5 text-primary-foreground" />
           </div>
-          <div>
-            <p className="text-sidebar-foreground font-bold text-lg leading-none">WIFI Maroc</p>
-            <p className="text-sidebar-foreground/50 text-xs mt-0.5">Internal Systems</p>
-          </div>
+          <h1 className="text-xl font-semibold text-foreground tracking-tight">SIGDI</h1>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to WIFI Maroc</p>
         </div>
 
-        {/* Middle content */}
-        <div className="relative space-y-6">
-          <h1 className="text-sidebar-foreground text-4xl font-bold leading-tight tracking-tight">
-            Intelligent<br />Request<br />Management
-          </h1>
-          <p className="text-sidebar-foreground/60 text-base leading-relaxed max-w-sm">
-            Centralize, track, and resolve internal requests across all teams — support agents, technicians, and administrators in one unified platform.
-          </p>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 pt-4">
-            {[
-              { label: 'Tickets Managed', value: '2,400+' },
-              { label: 'Avg. Resolution', value: '< 4h' },
-              { label: 'Active Technicians', value: '18' },
-              { label: 'SLA Compliance', value: '94%' },
-            ].map(({ label, value }) => (
-              <div key={label} className="border border-sidebar-border rounded-lg p-4">
-                <p className="text-sidebar-foreground text-2xl font-bold">{value}</p>
-                <p className="text-sidebar-foreground/50 text-xs mt-1">{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <p className="relative text-sidebar-foreground/30 text-xs">
-          © 2025 WIFI Maroc — SIGDI v1.0
-        </p>
-      </div>
-
-      {/* Right panel — login form */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md space-y-8">
-          {/* Mobile logo */}
-          <div className="flex lg:hidden items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-              <Wifi className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-lg">WIFI Maroc — SIGDI</span>
-          </div>
-
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight">Sign in to your account</h2>
-            <p className="text-muted-foreground text-sm">
-              Enter your credentials to access the dashboard
-            </p>
-          </div>
-
-          {/* Demo accounts */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick demo access</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_ACCOUNTS.map(acc => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => fillDemo(acc.email)}
-                  className="text-left border border-border rounded-lg px-3 py-2.5 hover:border-primary/60 hover:bg-accent transition-colors group"
-                >
-                  <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
-                    {acc.label}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{acc.email}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="relative flex items-center gap-3">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">or enter manually</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* Form */}
+        {/* Card */}
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="flex items-center gap-2 bg-destructive/10 text-destructive border border-destructive/30 rounded-lg px-3 py-2.5 text-sm">
+              <div className="flex items-center gap-2 bg-destructive/10 text-destructive rounded-lg px-3 py-2.5 text-sm animate-in fade-in slide-in-from-top-1 duration-200">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {error}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="email">Email address</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@wifimaroc.ma"
-                  required
-                  className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
-                />
-              </div>
+              <label htmlFor="email" className="text-xs font-medium text-muted-foreground">Email address</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@wifimaroc.ma"
+                required
+                autoFocus
+                className="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+              />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="password">Password</label>
+              <label htmlFor="password" className="text-xs font-medium text-muted-foreground">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   id="password"
                   type={showPw ? 'text' : 'password'}
@@ -186,7 +107,7 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  className="w-full pl-9 pr-10 py-2.5 bg-card border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+                  className="w-full px-3.5 py-2.5 pr-10 bg-background border border-border rounded-lg text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
                 />
                 <button
                   type="button"
@@ -202,16 +123,40 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+        </div>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Demo password for all accounts:{' '}
-            <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-xs">Password123!</code>
-          </p>
+        {/* Demo accounts */}
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={() => setShowDemo(v => !v)}
+            className="flex items-center gap-1 mx-auto text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Try a demo account
+            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showDemo ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showDemo && (
+            <div className="flex items-center justify-center gap-1.5 mt-3 flex-wrap animate-in fade-in slide-in-from-top-1 duration-200">
+              {DEMO_ACCOUNTS.map(acc => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => fillDemo(acc.email)}
+                  className="flex items-center gap-1.5 text-xs font-medium pl-2.5 pr-3 py-1.5 rounded-full border border-border text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-accent transition-colors"
+                >
+                  {acc.icon}
+                  {acc.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
