@@ -19,7 +19,6 @@ type Ticket = {
   created_by_name?: string
   assigned_to_name?: string
   assigned_to_id?: number | null
-  location_label?: string
 }
 
 type Technician = { id: number; first_name: string; last_name: string }
@@ -262,7 +261,6 @@ export default function TicketsPage() {
                   <th className="px-4 py-3">Title</th>
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Priority</th>
-                  <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Status</th>
                   {!isTechnician && <th className="px-4 py-3 hidden lg:table-cell">Assigned To</th>}
                   <th className="px-4 py-3 hidden lg:table-cell">Created</th>
@@ -272,7 +270,7 @@ export default function TicketsPage() {
               <tbody className="divide-y divide-border">
                 {tickets.length === 0 ? (
                   <tr>
-                    <td colSpan={isTechnician ? 6 : 8} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={isTechnician ? 5 : 7} className="px-4 py-8 text-center text-muted-foreground">
                       {hasActiveFilters ? 'No tickets match these filters.' : 'No tickets found.'}
                     </td>
                   </tr>
@@ -295,10 +293,6 @@ export default function TicketsPage() {
                         </td>
                         <td className="px-4 py-3.5">
                           <PriorityBadge priority={ticket.priority as any} size="sm" />
-                        </td>
-                        {/* Exact picked location */}
-                        <td className="px-4 py-3.5 text-xs text-muted-foreground max-w-[160px] truncate" title={ticket.location_label || undefined}>
-                          {ticket.location_label ?? '—'}
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { Wrench, MapPin, Search, Shield, Plus, X, CheckCircle2 } from 'lucide-react'
+import { Wrench, Search, Shield, Plus, X, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { InterventionBadge, PriorityBadge } from '@/components/status-badge'
 import { timeAgo, getInitials, INTERVENTION_STATUS_LABELS } from '@/lib/helpers'
@@ -29,11 +29,10 @@ type Intervention = {
   priority: TicketPriority
   category: string
   technician_name: string
-  location_label?: string
 }
 
 type Technician = { id: number; first_name: string; last_name: string }
-type UnassignedTicket = { id: number; title: string; priority: TicketPriority; location_label?: string }
+type UnassignedTicket = { id: number; title: string; priority: TicketPriority }
 
 export default function InterventionsPage() {
   const { user } = useAuth()
@@ -244,11 +243,6 @@ function InterventionCard({
                 Ticket #{intervention.ticket_id}
                 {intervention.ticket_title && ` — ${intervention.ticket_title}`}
               </Link>
-              {intervention.location_label && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                  <MapPin className="w-3 h-3" /> {intervention.location_label}
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <PriorityBadge priority={intervention.priority} size="sm" />
@@ -371,7 +365,7 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
             <option value="">Select an unassigned ticket…</option>
             {openTickets.map(t => (
               <option key={t.id} value={t.id}>
-                #{t.id} — {t.title} ({t.priority}){t.location_label ? ` · ${t.location_label}` : ''}
+                #{t.id} — {t.title} ({t.priority})
               </option>
             ))}
           </select>

@@ -4,15 +4,14 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Clock, MapPin, MessageSquare,
-  Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2, Wrench,
+  ArrowLeft, Clock, MessageSquare,
+  Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2, Wrench, Star,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
 import { formatDateTime, timeAgo, getInitials, ROLE_LABELS } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import ZoneMapPicker, { type PickedLocation } from '@/components/ZoneMapPicker'
 
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
@@ -43,9 +42,8 @@ type Ticket = {
   created_by_name?: string
   assigned_to_id?: number
   assigned_to_name?: string
-  location_label?: string
-  location_lat?: number
-  location_lng?: number
+  employee_rating?: number | null
+  rating_comment?: string | null
   comments: Comment[]
 }
 
@@ -58,6 +56,12 @@ type Comment = {
   created_at: string
   user_name?: string
   user_role?: string
+}
+
+type TechnicianRatingSummary = {
+  technician_id: number
+  rating_count: number
+  avg_rating: number | null
 }
 
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -78,7 +82,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [editDesc, setEditDesc]   = useState('')
   const [editCat, setEditCat]     = useState<TicketCategory>('network_support')
   const [editPrio, setEditPrio]   = useState<TicketPriority>('medium')
-  const [editLocation, setEditLocation] = useState<PickedLocation | null>(null)
   const [saving, setSaving]       = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -90,6 +93,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   const [technicians, setTechnicians] = useState<{ id: number; first_name: string; last_name: string }[]>([])
   const [assigning, setAssigning]     = useState(false)
+
+  // Rating — employee's own submission on this ticket
+  const [ratingValue, setRatingValue]   = useState(0)
+  const [ratingHover, setRatingHover]   = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [submittingRating, setSubmittingRating] = useState(false)
+  const [ratingError, setRatingError]   = useState('')
+
+  // Technician's overall average — shown to admin/agent
+  const [techRating, setTechRating] = useState<TechnicianRatingSummary | null>(null)
 
   // Safe to compute before the early returns below — doesn't touch `ticket`.
   const isAdmin = user?.role === 'admin'
@@ -120,6 +133,26 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     fetchTechnicians()
   }, [canManage])
 
+  // Technician's average rating — shown to admin/support_agent once a
+  // technician is assigned. Technicians could see their own via the same
+  // endpoint, but that's not surfaced here (no need on this page for them).
+  useEffect(() => {
+    if (!canManage || !ticket?.assigned_to_id) return
+    const fetchTechRating = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`http://localhost:4000/api/ratings/technician/${ticket.assigned_to_id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (res.ok) setTechRating(data)
+      } catch {
+        // silent — badge just won't show
+      }
+    }
+    fetchTechRating()
+  }, [canManage, ticket?.assigned_to_id])
+
   async function fetchTicket() {
     setLoading(true)
     setError('')
@@ -135,15 +168,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       setEditDesc(data.description)
       setEditCat(data.category)
       setEditPrio(data.priority)
-      if (data.location_lat != null && data.location_lng != null) {
-        setEditLocation({
-          lat: data.location_lat,
-          lng: data.location_lng,
-          label: data.location_label || '',
-        })
-      } else {
-        setEditLocation(null)
-      }
     } catch (err: any) {
       setError(err.message || 'Something went wrong.')
     } finally {
@@ -168,9 +192,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const canEdit = ['admin', 'support_agent'].includes(user.role) || ticket.assigned_to_id === user.id
   const canComment = canEdit || ticket.created_by_id === user.id
 
-  // Creator can edit their own ticket (incl. location) while it's still
-  // fresh ('created'). Admin can edit everything, any time. Agents never
-  // get this edit form — they only get status + technician below.
+  // Creator can edit their own ticket while it's still fresh ('created').
+  // Admin can edit everything, any time. Agents never get this edit form —
+  // they only get status + technician below.
   const canEditTicket = (ticket.created_by_id === user.id && ticket.status === 'created') || isAdmin
   const canCancelTicket = ticket.created_by_id === user.id && ticket.status === 'created'
 
@@ -288,11 +312,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         category: editCat,
         priority: editPrio,
       }
-      if (editLocation) {
-        body.location_lat = editLocation.lat
-        body.location_lng = editLocation.lng
-        body.location_label = editLocation.label
-      }
 
       // Admin edits go through the general PATCH /tickets/:id (allowed to
       // touch everything). The creator's own edit still goes through the
@@ -318,6 +337,27 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       setEditError(err.message || 'Something went wrong.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSubmitRating() {
+    if (!ticket || ratingValue < 1) return
+    setSubmittingRating(true)
+    setRatingError('')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('http://localhost:4000/api/ratings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ticket_id: ticket.id, rating: ratingValue, comment: ratingComment.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to submit rating.')
+      fetchTicket()
+    } catch (err: any) {
+      setRatingError(err.message || 'Something went wrong.')
+    } finally {
+      setSubmittingRating(false)
     }
   }
 
@@ -449,16 +489,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 </div>
 
-                {/* Location — same map picker used at creation. Re-picking
-                    drops a new pin and updates the label. */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium">Location</label>
-                  <ZoneMapPicker
-                    value={editLocation}
-                    onChange={setEditLocation}
-                  />
-                </div>
-
                 <div className="flex items-center gap-3 pt-1">
                   <button
                     onClick={() => setEditing(false)}
@@ -468,7 +498,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    disabled={saving || !editTitle.trim() || !editDesc.trim() || !editLocation}
+                    disabled={saving || !editTitle.trim() || !editDesc.trim()}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
                   >
                     <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save Changes'}
@@ -481,11 +511,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           {/* Manage: assign + status (+ priority for admin only).
               admin/support_agent ONLY. Agents can only touch status and
               assign a technician here — nothing else. Admin gets priority
-              too; title/description/location are edited via the form
-              above instead. Technicians no longer get status buttons here
-              at all (their PATCH /tickets/:id is blocked server-side).
-              They get a pointer to the Interventions page instead, further
-              below. */}
+              too; title/description are edited via the form above instead.
+              Technicians no longer get status buttons here at all (their
+              PATCH /tickets/:id is blocked server-side). They get a
+              pointer to the Interventions page instead, further below. */}
           {canManage && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground">Manage Ticket</h2>
@@ -600,6 +629,78 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             </Link>
           )}
 
+          {/* Rating — employee rates the technician once the ticket is
+              finished. One rating per ticket, enforced server-side too. */}
+          {ticket.created_by_id === user.id && ['resolved', 'closed'].includes(ticket.status) && ticket.assigned_to_id && (
+            <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-foreground">
+                {ticket.employee_rating ? 'Your Rating' : 'Rate the Technician'}
+              </h2>
+
+              {ticket.employee_rating ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <Star
+                        key={n}
+                        className={cn(
+                          'w-5 h-5',
+                          n <= (ticket.employee_rating || 0) ? 'fill-amber-400 text-amber-400' : 'text-border'
+                        )}
+                      />
+                    ))}
+                  </div>
+                  {ticket.rating_comment && (
+                    <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
+                      {ticket.rating_comment}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    How was your experience with {ticket.assigned_to_name || 'the technician'} on this ticket?
+                  </p>
+                  {ratingError && <p className="text-xs text-destructive">{ratingError}</p>}
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setRatingValue(n)}
+                        onMouseEnter={() => setRatingHover(n)}
+                        onMouseLeave={() => setRatingHover(0)}
+                        aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+                      >
+                        <Star
+                          className={cn(
+                            'w-6 h-6 transition-colors',
+                            n <= (ratingHover || ratingValue) ? 'fill-amber-400 text-amber-400' : 'text-border hover:text-amber-400/50'
+                          )}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={ratingComment}
+                    onChange={e => setRatingComment(e.target.value)}
+                    placeholder="Optional comment…"
+                    rows={2}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                  />
+                  <button
+                    onClick={handleSubmitRating}
+                    disabled={ratingValue < 1 || submittingRating}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
+                  >
+                    <Star className="w-3.5 h-3.5" />
+                    {submittingRating ? 'Submitting…' : 'Submit Rating'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Comments */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2">
@@ -680,12 +781,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             {ticket.resolved_at && (
               <DetailRow icon={<Clock className="w-3.5 h-3.5" />} label="Resolved" value={formatDateTime(ticket.resolved_at)} />
             )}
-            {/* Exact picked location */}
-            <DetailRow
-              icon={<MapPin className="w-3.5 h-3.5" />}
-              label="Location"
-              value={ticket.location_label || 'Not set'}
-            />
           </DetailCard>
 
           <DetailCard title="Requester">
@@ -701,11 +796,23 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
           <DetailCard title="Assigned To">
             {ticket.assigned_to_name ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-xs font-bold text-green-400 shrink-0">
-                  {getInitials(ticket.assigned_to_name.split(' ')[0], ticket.assigned_to_name.split(' ')[1] || '')}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-xs font-bold text-green-400 shrink-0">
+                    {getInitials(ticket.assigned_to_name.split(' ')[0], ticket.assigned_to_name.split(' ')[1] || '')}
+                  </div>
+                  <p className="text-xs font-semibold text-foreground">{ticket.assigned_to_name}</p>
                 </div>
-                <p className="text-xs font-semibold text-foreground">{ticket.assigned_to_name}</p>
+                {canManage && techRating && techRating.rating_count > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground pl-11">
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    <span className="font-semibold text-foreground">{techRating.avg_rating}</span>
+                    <span>({techRating.rating_count} rating{techRating.rating_count === 1 ? '' : 's'})</span>
+                  </div>
+                )}
+                {canManage && techRating && techRating.rating_count === 0 && (
+                  <p className="text-xs text-muted-foreground pl-11">No ratings yet</p>
+                )}
               </div>
             ) : (
               <span className="text-xs text-muted-foreground">Unassigned</span>

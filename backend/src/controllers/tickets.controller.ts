@@ -71,7 +71,6 @@ export async function listTickets(req: AuthRequest, res: Response, next: NextFun
        LIMIT ? OFFSET ?`,
       [...params, lim, offset]
     )
-
     const [[{ total }]] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT COUNT(*) AS total FROM tickets t ${whereSQL}`,
       params
@@ -89,10 +88,13 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT t.*,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
-         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name
+         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
+         r.rating  AS employee_rating,
+         r.comment AS rating_comment
        FROM tickets t
        LEFT JOIN users cb ON cb.id = t.created_by_id
        LEFT JOIN users ab ON ab.id = t.assigned_to_id
+       LEFT JOIN ticket_ratings r ON r.ticket_id = t.id
        WHERE t.id = ?`,
       [id]
     )
@@ -125,27 +127,15 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
 /* ── POST /tickets ── */
 export async function createTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const {
-      title, description, category, priority,
-      location_lat, location_lng, location_label,
-    } = req.body as {
+    const { title, description, category, priority } = req.body as {
       title: string; description: string
       category: TicketCategory; priority: TicketPriority
-      location_lat?: number; location_lng?: number; location_label?: string
-    }
-
-    // The exact picked place is required — this is the only location data
-    // a ticket carries now.
-    if (!location_label || location_lat == null || location_lng == null) {
-      res.status(400).json({ error: 'A location is required — pick your exact spot on the map.' })
-      return
     }
 
     const [result] = await pool.query<mysql.ResultSetHeader>(
-      `INSERT INTO tickets
-         (title, description, category, priority, status, created_by_id, location_lat, location_lng, location_label)
-       VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?)`,
-      [title, description, category, priority, req.user!.userId, location_lat, location_lng, location_label]
+      `INSERT INTO tickets (title, description, category, priority, status, created_by_id)
+       VALUES (?, ?, ?, ?, 'created', ?)`,
+      [title, description, category, priority, req.user!.userId]
     )
 
     const ticketId = result.insertId
@@ -187,11 +177,9 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     const { id } = req.params
     const {
       status, assigned_to_id, priority,
-      location_lat, location_lng, location_label,
       title, description, category,
     } = req.body as {
       status?: TicketStatus; assigned_to_id?: number; priority?: TicketPriority
-      location_lat?: number; location_lng?: number; location_label?: string
       title?: string; description?: string; category?: TicketCategory
     }
 
@@ -221,13 +209,12 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     }
 
     // support_agent can only move `status` through this endpoint. Everything
-    // else (title/description/category/priority/location) is admin-only.
+    // else (title/description/category/priority) is admin-only.
     // This is defense-in-depth — the UI never sends these fields for an
     // agent — but we still reject them server-side in case that drifts.
     const isAdmin = req.user!.role === 'admin'
     const triedRestrictedField =
-      priority !== undefined || location_lat != null ||
-      location_lng != null || location_label !== undefined || title !== undefined ||
+      priority !== undefined || title !== undefined ||
       description !== undefined || category !== undefined
     if (!isAdmin && triedRestrictedField) {
       res.status(403).json({ error: 'Support agents can only update status here. Ask an admin for other changes.' })
@@ -238,14 +225,10 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     const params: unknown[] = []
 
     if (status)                  { fields.push('status = ?');         params.push(status) }
-    if (assigned_to_id)          { fields.push('assigned_to_id = ?'); params.push(assigned_to_id) }
     if (isAdmin && title)              { fields.push('title = ?');          params.push(title) }
     if (isAdmin && description)        { fields.push('description = ?');    params.push(description) }
     if (isAdmin && category)           { fields.push('category = ?');       params.push(category) }
     if (isAdmin && priority)           { fields.push('priority = ?');       params.push(priority) }
-    if (isAdmin && location_lat != null)   { fields.push('location_lat = ?');   params.push(location_lat) }
-    if (isAdmin && location_lng != null)   { fields.push('location_lng = ?');   params.push(location_lng) }
-    if (isAdmin && location_label)         { fields.push('location_label = ?'); params.push(location_label) }
 
     if (status === 'resolved' || status === 'closed') {
       fields.push('resolved_at = NOW()')
@@ -328,12 +311,8 @@ export async function addComment(req: AuthRequest, res: Response, next: NextFunc
 export async function editTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params
-    const {
-      title, description, category, priority,
-      location_lat, location_lng, location_label,
-    } = req.body as {
+    const { title, description, category, priority } = req.body as {
       title?: string; description?: string; category?: TicketCategory; priority?: TicketPriority
-      location_lat?: number; location_lng?: number; location_label?: string
     }
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
@@ -361,12 +340,6 @@ export async function editTicket(req: AuthRequest, res: Response, next: NextFunc
     if (description) { fields.push('description = ?'); params.push(description) }
     if (category)    { fields.push('category = ?');    params.push(category) }
     if (priority)    { fields.push('priority = ?');     params.push(priority) }
-
-    // Same free-text location fields used at creation — the employee can
-    // re-pick their exact spot on the map while the ticket is still fresh.
-    if (location_lat != null)    { fields.push('location_lat = ?');   params.push(location_lat) }
-    if (location_lng != null)    { fields.push('location_lng = ?');   params.push(location_lng) }
-    if (location_label)          { fields.push('location_label = ?'); params.push(location_label) }
 
     if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
 

@@ -39,7 +39,7 @@ export async function listInterventions(req: AuthRequest, res: Response, next: N
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT i.*,
-         t.title AS ticket_title, t.priority, t.category, t.location_label,
+         t.title AS ticket_title, t.priority, t.category,
          CONCAT(u.first_name, ' ', u.last_name) AS technician_name
        FROM interventions i
        JOIN tickets t  ON t.id = i.ticket_id

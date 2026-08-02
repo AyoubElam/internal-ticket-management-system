@@ -2,20 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { ArrowLeft, Ticket, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { CATEGORY_LABELS, PRIORITY_LABELS } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority } from '@/lib/types'
-import type { PickedLocation } from '@/components/ZoneMapPicker'
-
-// Leaflet touches `window`, so the picker can't be server-rendered.
-const ZoneMapPicker = dynamic(() => import('@/components/ZoneMapPicker'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-64 rounded-lg border border-border bg-card animate-pulse" />
-  ),
-})
 
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
@@ -42,7 +32,6 @@ export default function NewTicketPage() {
   const [description, setDescription] = useState('')
   const [category,    setCategory]    = useState<TicketCategory>('network_support')
   const [priority,    setPriority]    = useState<TicketPriority>('medium')
-  const [location,    setLocation]    = useState<PickedLocation | null>(null)
   const [submitting,  setSubmitting]  = useState(false)
   const [success,     setSuccess]     = useState(false)
   const [error,       setError]       = useState('')
@@ -51,11 +40,6 @@ export default function NewTicketPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-
-    if (!location) {
-      setError('Please pick your location on the map before submitting.')
-      return
-    }
 
     setSubmitting(true)
     setError('')
@@ -68,17 +52,7 @@ export default function NewTicketPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          title,
-          description,
-          category,
-          priority,
-          // zone_id removed — zones table was dropped. Location is now
-          // purely lat/lng/label from the map picker, no zone matching.
-          location_lat: location.lat,
-          location_lng: location.lng,
-          location_label: location.label,
-        }),
+        body: JSON.stringify({ title, description, category, priority }),
       })
 
       const data = await res.json()
@@ -197,14 +171,6 @@ export default function NewTicketPage() {
           </div>
         </div>
 
-        {/* Location — free-text place picked on the map, purely lat/lng/label now */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">
-            Location <span className="text-red-400">*</span>
-          </label>
-          <ZoneMapPicker value={location} onChange={setLocation} />
-        </div>
-
         {/* Info banner for critical */}
         {priority === 'critical' && (
           <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
@@ -227,7 +193,7 @@ export default function NewTicketPage() {
           </button>
           <button
             type="submit"
-            disabled={submitting || !title.trim() || !description.trim() || !location}
+            disabled={submitting || !title.trim() || !description.trim()}
             className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? 'Submitting…' : 'Submit Ticket'}
