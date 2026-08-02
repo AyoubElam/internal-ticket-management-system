@@ -7,19 +7,18 @@ import mysql from 'mysql2/promise'
 /* ── GET /users ── */
 export async function listUsers(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { role, zone_id, is_active } = req.query as Record<string, string>
+    const { role, is_active } = req.query as Record<string, string>
 
     const where: string[] = []
     const params: unknown[] = []
 
     if (role)      { where.push('role = ?');      params.push(role) }
-    if (zone_id)   { where.push('zone_id = ?');   params.push(zone_id) }
     if (is_active) { where.push('is_active = ?'); params.push(is_active === 'true' ? 1 : 0) }
 
     const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT id, email, first_name, last_name, role, zone_id, is_active, created_at
+      `SELECT id, email, first_name, last_name, role, is_active, created_at
        FROM users ${whereSQL} ORDER BY created_at DESC`,
       params
     )
@@ -31,7 +30,7 @@ export async function listUsers(req: AuthRequest, res: Response, next: NextFunct
 export async function getUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT id, email, first_name, last_name, role, zone_id, is_active, created_at
+      `SELECT id, email, first_name, last_name, role, is_active, created_at
        FROM users WHERE id = ?`,
       [req.params.id]
     )
@@ -43,9 +42,9 @@ export async function getUser(req: AuthRequest, res: Response, next: NextFunctio
 /* ── POST /users ── */
 export async function createUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email, password, first_name, last_name, role, zone_id } = req.body as {
+    const { email, password, first_name, last_name, role } = req.body as {
       email: string; password: string; first_name: string
-      last_name: string; role: Role; zone_id?: number
+      last_name: string; role: Role
     }
 
     const [existing] = await pool.query<mysql.RowDataPacket[]>(
@@ -58,9 +57,9 @@ export async function createUser(req: AuthRequest, res: Response, next: NextFunc
     const hash = await bcrypt.hash(password, 12)
 
     const [result] = await pool.query<mysql.ResultSetHeader>(
-      `INSERT INTO users (email, password_hash, first_name, last_name, role, zone_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [email, hash, first_name, last_name, role, zone_id ?? null]
+      `INSERT INTO users (email, password_hash, first_name, last_name, role)
+       VALUES (?, ?, ?, ?, ?)`,
+      [email, hash, first_name, last_name, role]
     )
 
     res.status(201).json({ id: result.insertId, message: 'User created.' })
@@ -71,9 +70,8 @@ export async function createUser(req: AuthRequest, res: Response, next: NextFunc
 export async function updateUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params
-    const { first_name, last_name, role, zone_id, is_active } = req.body as {
-      first_name?: string; last_name?: string; role?: Role
-      zone_id?: number | null; is_active?: boolean
+    const { first_name, last_name, role, is_active } = req.body as {
+      first_name?: string; last_name?: string; role?: Role; is_active?: boolean
     }
 
     const fields: string[] = []
@@ -82,7 +80,6 @@ export async function updateUser(req: AuthRequest, res: Response, next: NextFunc
     if (first_name  !== undefined) { fields.push('first_name = ?');  params.push(first_name) }
     if (last_name   !== undefined) { fields.push('last_name = ?');   params.push(last_name) }
     if (role        !== undefined) { fields.push('role = ?');        params.push(role) }
-    if (zone_id     !== undefined) { fields.push('zone_id = ?');     params.push(zone_id) }
     if (is_active   !== undefined) { fields.push('is_active = ?');   params.push(is_active ? 1 : 0) }
 
     if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }

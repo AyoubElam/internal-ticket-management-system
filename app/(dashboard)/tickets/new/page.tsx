@@ -2,11 +2,20 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { ArrowLeft, Ticket, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { mockZones } from '@/lib/mock-data'
 import { CATEGORY_LABELS, PRIORITY_LABELS } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority } from '@/lib/types'
+import type { PickedLocation } from '@/components/ZoneMapPicker'
+
+// Leaflet touches `window`, so the picker can't be server-rendered.
+const ZoneMapPicker = dynamic(() => import('@/components/ZoneMapPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-64 rounded-lg border border-border bg-card animate-pulse" />
+  ),
+})
 
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
@@ -33,47 +42,56 @@ export default function NewTicketPage() {
   const [description, setDescription] = useState('')
   const [category,    setCategory]    = useState<TicketCategory>('network_support')
   const [priority,    setPriority]    = useState<TicketPriority>('medium')
-  const [zoneId,      setZoneId]      = useState<string>('')
+  const [location,    setLocation]    = useState<PickedLocation | null>(null)
   const [submitting,  setSubmitting]  = useState(false)
   const [success,     setSuccess]     = useState(false)
+  const [error,       setError]       = useState('')
 
   if (!user) return null
 
-const [error, setError] = useState('')
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
 
-async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault()
-  setSubmitting(true)
-  setError('')
+    if (!location) {
+      setError('Please pick your location on the map before submitting.')
+      return
+    }
 
-  try {
-    const token = localStorage.getItem('token')
-    const res = await fetch('http://localhost:4000/api/tickets', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        title,
-        description,
-        category,
-        priority,
-        zone_id: zoneId ? Number(zoneId) : undefined,
-      }),
-    })
+    setSubmitting(true)
+    setError('')
 
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Failed to create ticket.')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('http://localhost:4000/api/tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          category,
+          priority,
+          // zone_id removed — zones table was dropped. Location is now
+          // purely lat/lng/label from the map picker, no zone matching.
+          location_lat: location.lat,
+          location_lng: location.lng,
+          location_label: location.label,
+        }),
+      })
 
-    setSuccess(true)
-    setTimeout(() => router.push('/tickets'), 1500)
-  } catch (err: any) {
-    setError(err.message || 'Something went wrong.')
-  } finally {
-    setSubmitting(false)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create ticket.')
+
+      setSuccess(true)
+      setTimeout(() => router.push('/tickets'), 1500)
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong.')
+    } finally {
+      setSubmitting(false)
+    }
   }
-}
 
   if (success) {
     return (
@@ -179,20 +197,12 @@ async function handleSubmit(e: React.FormEvent) {
           </div>
         </div>
 
-        {/* Zone */}
+        {/* Location — free-text place picked on the map, purely lat/lng/label now */}
         <div className="space-y-1.5">
-          <label htmlFor="zone" className="text-sm font-medium">Zone / Location</label>
-          <select
-            id="zone"
-            value={zoneId}
-            onChange={e => setZoneId(e.target.value)}
-            className="w-full px-3 py-2.5 bg-card border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
-          >
-            <option value="">Select a zone (optional)</option>
-            {mockZones.map(z => (
-              <option key={z.id} value={z.id}>{z.name} — {z.region}</option>
-            ))}
-          </select>
+          <label className="text-sm font-medium">
+            Location <span className="text-red-400">*</span>
+          </label>
+          <ZoneMapPicker value={location} onChange={setLocation} />
         </div>
 
         {/* Info banner for critical */}
@@ -205,6 +215,8 @@ async function handleSubmit(e: React.FormEvent) {
           </div>
         )}
 
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
         <div className="flex items-center gap-3 pt-2">
           <button
             type="button"
@@ -215,7 +227,7 @@ async function handleSubmit(e: React.FormEvent) {
           </button>
           <button
             type="submit"
-            disabled={submitting || !title.trim() || !description.trim()}
+            disabled={submitting || !title.trim() || !description.trim() || !location}
             className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? 'Submitting…' : 'Submit Ticket'}

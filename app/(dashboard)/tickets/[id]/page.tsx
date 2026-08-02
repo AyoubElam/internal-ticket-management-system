@@ -12,6 +12,7 @@ import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-b
 import { formatDateTime, timeAgo, getInitials, ROLE_LABELS } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import ZoneMapPicker, { type PickedLocation } from '@/components/ZoneMapPicker'
 
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
@@ -42,7 +43,9 @@ type Ticket = {
   created_by_name?: string
   assigned_to_id?: number
   assigned_to_name?: string
-  zone_name?: string
+  location_label?: string
+  location_lat?: number
+  location_lng?: number
   comments: Comment[]
 }
 
@@ -75,6 +78,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [editDesc, setEditDesc]   = useState('')
   const [editCat, setEditCat]     = useState<TicketCategory>('network_support')
   const [editPrio, setEditPrio]   = useState<TicketPriority>('medium')
+  const [editLocation, setEditLocation] = useState<PickedLocation | null>(null)
   const [saving, setSaving]       = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -88,7 +92,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [assigning, setAssigning]     = useState(false)
 
   // Safe to compute before the early returns below — doesn't touch `ticket`.
-  const canManage = ['admin', 'support_agent'].includes(user?.role || '')
+  const isAdmin = user?.role === 'admin'
+  const isAgent = user?.role === 'support_agent'
+  const canManage = isAdmin || isAgent
   const isTechnician = user?.role === 'technician'
 
   useEffect(() => {
@@ -129,6 +135,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       setEditDesc(data.description)
       setEditCat(data.category)
       setEditPrio(data.priority)
+      if (data.location_lat != null && data.location_lng != null) {
+        setEditLocation({
+          lat: data.location_lat,
+          lng: data.location_lng,
+          label: data.location_label || '',
+        })
+      } else {
+        setEditLocation(null)
+      }
     } catch (err: any) {
       setError(err.message || 'Something went wrong.')
     } finally {
@@ -152,7 +167,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   const canEdit = ['admin', 'support_agent'].includes(user.role) || ticket.assigned_to_id === user.id
   const canComment = canEdit || ticket.created_by_id === user.id
-  const canEditTicket = ticket.created_by_id === user.id && ticket.status === 'created'
+
+  // Creator can edit their own ticket (incl. location) while it's still
+  // fresh ('created'). Admin can edit everything, any time. Agents never
+  // get this edit form — they only get status + technician below.
+  const canEditTicket = (ticket.created_by_id === user.id && ticket.status === 'created') || isAdmin
+  const canCancelTicket = ticket.created_by_id === user.id && ticket.status === 'created'
 
   const isAssignedTechnician = isTechnician && ticket.assigned_to_id === user.id
   // Status/priority management panel is admin/support_agent only now.
@@ -261,18 +281,34 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     setEditError('')
     try {
       const token = localStorage.getItem('token')
-      const res = await fetch(`http://localhost:4000/api/tickets/${ticket.id}/edit`, {
+
+      const body: Record<string, unknown> = {
+        title: editTitle,
+        description: editDesc,
+        category: editCat,
+        priority: editPrio,
+      }
+      if (editLocation) {
+        body.location_lat = editLocation.lat
+        body.location_lng = editLocation.lng
+        body.location_label = editLocation.label
+      }
+
+      // Admin edits go through the general PATCH /tickets/:id (allowed to
+      // touch everything). The creator's own edit still goes through the
+      // dedicated /edit endpoint, which stays locked to status='created'.
+      const isOwnerEdit = ticket.created_by_id === user!.id && !isAdmin
+      const url = isOwnerEdit
+        ? `http://localhost:4000/api/tickets/${ticket.id}/edit`
+        : `http://localhost:4000/api/tickets/${ticket.id}`
+
+      const res = await fetch(url, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          title: editTitle,
-          description: editDesc,
-          category: editCat,
-          priority: editPrio,
-        }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update ticket.')
@@ -326,21 +362,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <h1 className="text-xl font-bold text-foreground mt-1.5 text-balance">{ticket.title}</h1>
         </div>
 
-        {canEditTicket && !editing && (
+        {(canEditTicket || canCancelTicket) && !editing && (
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditing(true)}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-            <button
-              onClick={handleCancelTicket}
-              disabled={cancelling}
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-            >
-              <X className="w-3.5 h-3.5" /> {cancelling ? 'Cancelling…' : 'Cancel Ticket'}
-            </button>
+            {canEditTicket && (
+              <button
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+            )}
+            {canCancelTicket && (
+              <button
+                onClick={handleCancelTicket}
+                disabled={cancelling}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              >
+                <X className="w-3.5 h-3.5" /> {cancelling ? 'Cancelling…' : 'Cancel Ticket'}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -409,6 +449,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 </div>
 
+                {/* Location — same map picker used at creation. Re-picking
+                    drops a new pin and updates the label. */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Location</label>
+                  <ZoneMapPicker
+                    value={editLocation}
+                    onChange={setEditLocation}
+                  />
+                </div>
+
                 <div className="flex items-center gap-3 pt-1">
                   <button
                     onClick={() => setEditing(false)}
@@ -418,7 +468,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    disabled={saving || !editTitle.trim() || !editDesc.trim()}
+                    disabled={saving || !editTitle.trim() || !editDesc.trim() || !editLocation}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
                   >
                     <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save Changes'}
@@ -428,10 +478,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             )}
           </div>
 
-          {/* Manage: assign + status + priority. admin/support_agent ONLY now —
-              technicians no longer get status buttons here (their PATCH
-              /tickets/:id is blocked server-side). They get a pointer to
-              the Interventions page instead, right below. */}
+          {/* Manage: assign + status (+ priority for admin only).
+              admin/support_agent ONLY. Agents can only touch status and
+              assign a technician here — nothing else. Admin gets priority
+              too; title/description/location are edited via the form
+              above instead. Technicians no longer get status buttons here
+              at all (their PATCH /tickets/:id is blocked server-side).
+              They get a pointer to the Interventions page instead, further
+              below. */}
           {canManage && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground">Manage Ticket</h2>
@@ -501,27 +555,29 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 )}
               </div>
 
-              {/* Priority selector */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {PRIORITIES.map(p => (
-                    <button
-                      key={p}
-                      onClick={() => handlePriorityChange(p)}
-                      disabled={updatingPriority || p === ticket.priority}
-                      className={cn(
-                        'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize',
-                        p === ticket.priority
-                          ? 'bg-primary/10 border-primary text-primary cursor-default'
-                          : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60'
-                      )}
-                    >
-                      {p}
-                    </button>
-                  ))}
+              {/* Priority selector — admin only. Agents don't get this. */}
+              {isAdmin && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {PRIORITIES.map(p => (
+                      <button
+                        key={p}
+                        onClick={() => handlePriorityChange(p)}
+                        disabled={updatingPriority || p === ticket.priority}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize',
+                          p === ticket.priority
+                            ? 'bg-primary/10 border-primary text-primary cursor-default'
+                            : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60'
+                        )}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -624,9 +680,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             {ticket.resolved_at && (
               <DetailRow icon={<Clock className="w-3.5 h-3.5" />} label="Resolved" value={formatDateTime(ticket.resolved_at)} />
             )}
-            {ticket.zone_name && (
-              <DetailRow icon={<MapPin className="w-3.5 h-3.5" />} label="Zone" value={ticket.zone_name} />
-            )}
+            {/* Exact picked location */}
+            <DetailRow
+              icon={<MapPin className="w-3.5 h-3.5" />}
+              label="Location"
+              value={ticket.location_label || 'Not set'}
+            />
           </DetailCard>
 
           <DetailCard title="Requester">

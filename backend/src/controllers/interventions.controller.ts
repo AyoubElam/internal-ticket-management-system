@@ -39,13 +39,11 @@ export async function listInterventions(req: AuthRequest, res: Response, next: N
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT i.*,
-         t.title AS ticket_title, t.priority, t.category, t.zone_id,
-         CONCAT(u.first_name, ' ', u.last_name) AS technician_name,
-         z.name AS zone_name
+         t.title AS ticket_title, t.priority, t.category, t.location_label,
+         CONCAT(u.first_name, ' ', u.last_name) AS technician_name
        FROM interventions i
        JOIN tickets t  ON t.id = i.ticket_id
        JOIN users   u  ON u.id = i.technician_id
-       LEFT JOIN zones z ON z.id = t.zone_id
        ${whereSQL}
        ORDER BY i.updated_at DESC`,
       params

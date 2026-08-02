@@ -28,13 +28,12 @@ type Intervention = {
   ticket_title: string
   priority: TicketPriority
   category: string
-  zone_id?: number
   technician_name: string
-  zone_name?: string
+  location_label?: string
 }
 
 type Technician = { id: number; first_name: string; last_name: string }
-type UnassignedTicket = { id: number; title: string; priority: TicketPriority }
+type UnassignedTicket = { id: number; title: string; priority: TicketPriority; location_label?: string }
 
 export default function InterventionsPage() {
   const { user } = useAuth()
@@ -245,9 +244,9 @@ function InterventionCard({
                 Ticket #{intervention.ticket_id}
                 {intervention.ticket_title && ` — ${intervention.ticket_title}`}
               </Link>
-              {intervention.zone_name && (
+              {intervention.location_label && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                  <MapPin className="w-3 h-3" /> {intervention.zone_name}
+                  <MapPin className="w-3 h-3" /> {intervention.location_label}
                 </p>
               )}
             </div>
@@ -371,7 +370,9 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
           >
             <option value="">Select an unassigned ticket…</option>
             {openTickets.map(t => (
-              <option key={t.id} value={t.id}>#{t.id} — {t.title} ({t.priority})</option>
+              <option key={t.id} value={t.id}>
+                #{t.id} — {t.title} ({t.priority}){t.location_label ? ` · ${t.location_label}` : ''}
+              </option>
             ))}
           </select>
         </div>

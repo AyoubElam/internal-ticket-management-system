@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Ticket, Users, MapPin, BarChart3,
+  LayoutDashboard, Ticket, Users, BarChart3,
   Wrench, Bell, LogOut, Wifi, ChevronRight, X
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
@@ -50,12 +50,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Users',
     icon:  <Users className="w-4 h-4" />,
     roles: ['admin'],
-  },
-  {
-    href:  '/zones',
-    label: 'Zones',
-    icon:  <MapPin className="w-4 h-4" />,
-    roles: ['admin', 'support_agent'],
   },
   {
     href:  '/notifications',

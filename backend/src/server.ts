@@ -12,7 +12,6 @@ import authRoutes          from './routes/auth.routes'
 import ticketsRoutes       from './routes/tickets.routes'
 import usersRoutes         from './routes/users.routes'
 import interventionsRoutes from './routes/interventions.routes'
-import zonesRoutes         from './routes/zones.routes'
 import analyticsRoutes     from './routes/analytics.routes'
 import notificationsRoutes from './routes/notifications.routes'
 
@@ -59,7 +58,6 @@ app.use('/api/auth',          authRoutes)
 app.use('/api/tickets',       ticketsRoutes)
 app.use('/api/users',         usersRoutes)
 app.use('/api/interventions', interventionsRoutes)
-app.use('/api/zones',         zonesRoutes)
 app.use('/api/analytics',     analyticsRoutes)
 app.use('/api/notifications', notificationsRoutes)
 

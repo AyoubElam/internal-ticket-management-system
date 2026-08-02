@@ -32,7 +32,7 @@ async function notifyUsers(userIds: number[], message: string): Promise<void> {
 /* ── GET /tickets ── */
 export async function listTickets(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { page, limit, status, priority, category, zone_id } = req.query as Record<string, string>
+    const { page, limit, status, priority, category } = req.query as Record<string, string>
     const { offset, limit: lim } = paginate(page, limit)
 
     const where: string[] = []
@@ -50,21 +50,20 @@ export async function listTickets(req: AuthRequest, res: Response, next: NextFun
     if (status)   { where.push('t.status = ?');   params.push(status) }
     if (priority) { where.push('t.priority = ?'); params.push(priority) }
     if (category) { where.push('t.category = ?'); params.push(category) }
-    if (zone_id)  { where.push('t.zone_id = ?');  params.push(zone_id) }
 
     const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+    // location_label (t.location_label, straight off the ticket) is the
+    // display value — the exact place the employee picked.
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT
          t.*,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
          CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
-         z.name AS zone_name,
          COUNT(c.id) AS comments_count
        FROM tickets t
        LEFT JOIN users  cb ON cb.id = t.created_by_id
        LEFT JOIN users  ab ON ab.id = t.assigned_to_id
-       LEFT JOIN zones  z  ON z.id  = t.zone_id
        LEFT JOIN comments c ON c.ticket_id = t.id
        ${whereSQL}
        GROUP BY t.id
@@ -90,12 +89,10 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT t.*,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
-         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
-         z.name AS zone_name
+         CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name
        FROM tickets t
        LEFT JOIN users cb ON cb.id = t.created_by_id
        LEFT JOIN users ab ON ab.id = t.assigned_to_id
-       LEFT JOIN zones z  ON z.id  = t.zone_id
        WHERE t.id = ?`,
       [id]
     )
@@ -128,15 +125,27 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
 /* ── POST /tickets ── */
 export async function createTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { title, description, category, priority, zone_id } = req.body as {
+    const {
+      title, description, category, priority,
+      location_lat, location_lng, location_label,
+    } = req.body as {
       title: string; description: string
-      category: TicketCategory; priority: TicketPriority; zone_id?: number
+      category: TicketCategory; priority: TicketPriority
+      location_lat?: number; location_lng?: number; location_label?: string
+    }
+
+    // The exact picked place is required — this is the only location data
+    // a ticket carries now.
+    if (!location_label || location_lat == null || location_lng == null) {
+      res.status(400).json({ error: 'A location is required — pick your exact spot on the map.' })
+      return
     }
 
     const [result] = await pool.query<mysql.ResultSetHeader>(
-      `INSERT INTO tickets (title, description, category, priority, status, created_by_id, zone_id)
-       VALUES (?, ?, ?, ?, 'created', ?, ?)`,
-      [title, description, category, priority, req.user!.userId, zone_id ?? null]
+      `INSERT INTO tickets
+         (title, description, category, priority, status, created_by_id, location_lat, location_lng, location_label)
+       VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?)`,
+      [title, description, category, priority, req.user!.userId, location_lat, location_lng, location_label]
     )
 
     const ticketId = result.insertId
@@ -169,12 +178,21 @@ export async function createTicket(req: AuthRequest, res: Response, next: NextFu
   } catch (err) { next(err) }
 }
 
-/* ── PATCH /tickets/:id ── */
+/* ── PATCH /tickets/:id ──
+   support_agent: status ONLY (technician assignment still goes through
+   POST /interventions, not here).
+   admin: status + title/description/category/priority/location — full edit. */
 export async function updateTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params
-    const { status, assigned_to_id, priority, zone_id } = req.body as {
-      status?: TicketStatus; assigned_to_id?: number; priority?: TicketPriority; zone_id?: number
+    const {
+      status, assigned_to_id, priority,
+      location_lat, location_lng, location_label,
+      title, description, category,
+    } = req.body as {
+      status?: TicketStatus; assigned_to_id?: number; priority?: TicketPriority
+      location_lat?: number; location_lng?: number; location_label?: string
+      title?: string; description?: string; category?: TicketCategory
     }
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
@@ -202,13 +220,32 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
       return
     }
 
+    // support_agent can only move `status` through this endpoint. Everything
+    // else (title/description/category/priority/location) is admin-only.
+    // This is defense-in-depth — the UI never sends these fields for an
+    // agent — but we still reject them server-side in case that drifts.
+    const isAdmin = req.user!.role === 'admin'
+    const triedRestrictedField =
+      priority !== undefined || location_lat != null ||
+      location_lng != null || location_label !== undefined || title !== undefined ||
+      description !== undefined || category !== undefined
+    if (!isAdmin && triedRestrictedField) {
+      res.status(403).json({ error: 'Support agents can only update status here. Ask an admin for other changes.' })
+      return
+    }
+
     const fields: string[] = []
     const params: unknown[] = []
 
-    if (status)         { fields.push('status = ?');         params.push(status) }
-    if (assigned_to_id) { fields.push('assigned_to_id = ?'); params.push(assigned_to_id) }
-    if (priority)       { fields.push('priority = ?');       params.push(priority) }
-    if (zone_id)        { fields.push('zone_id = ?');        params.push(zone_id) }
+    if (status)                  { fields.push('status = ?');         params.push(status) }
+    if (assigned_to_id)          { fields.push('assigned_to_id = ?'); params.push(assigned_to_id) }
+    if (isAdmin && title)              { fields.push('title = ?');          params.push(title) }
+    if (isAdmin && description)        { fields.push('description = ?');    params.push(description) }
+    if (isAdmin && category)           { fields.push('category = ?');       params.push(category) }
+    if (isAdmin && priority)           { fields.push('priority = ?');       params.push(priority) }
+    if (isAdmin && location_lat != null)   { fields.push('location_lat = ?');   params.push(location_lat) }
+    if (isAdmin && location_lng != null)   { fields.push('location_lng = ?');   params.push(location_lng) }
+    if (isAdmin && location_label)         { fields.push('location_label = ?'); params.push(location_label) }
 
     if (status === 'resolved' || status === 'closed') {
       fields.push('resolved_at = NOW()')
@@ -291,8 +328,12 @@ export async function addComment(req: AuthRequest, res: Response, next: NextFunc
 export async function editTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params
-    const { title, description, category, priority } = req.body as {
+    const {
+      title, description, category, priority,
+      location_lat, location_lng, location_label,
+    } = req.body as {
       title?: string; description?: string; category?: TicketCategory; priority?: TicketPriority
+      location_lat?: number; location_lng?: number; location_label?: string
     }
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
@@ -320,6 +361,12 @@ export async function editTicket(req: AuthRequest, res: Response, next: NextFunc
     if (description) { fields.push('description = ?'); params.push(description) }
     if (category)    { fields.push('category = ?');    params.push(category) }
     if (priority)    { fields.push('priority = ?');     params.push(priority) }
+
+    // Same free-text location fields used at creation — the employee can
+    // re-pick their exact spot on the map while the ticket is still fresh.
+    if (location_lat != null)    { fields.push('location_lat = ?');   params.push(location_lat) }
+    if (location_lng != null)    { fields.push('location_lng = ?');   params.push(location_lng) }
+    if (location_label)          { fields.push('location_label = ?'); params.push(location_label) }
 
     if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
 

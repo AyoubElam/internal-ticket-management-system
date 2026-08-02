@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Filter, X, AlertTriangle, Inbox, Clock, MapPin, User } from 'lucide-react'
+import { Plus, Filter, X, AlertTriangle } from 'lucide-react'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
 import { timeAgo, getInitials, CATEGORY_LABELS, STATUS_LABELS } from '@/lib/helpers'
 import { useAuth } from '@/lib/auth-context'
@@ -19,11 +19,9 @@ type Ticket = {
   created_by_name?: string
   assigned_to_name?: string
   assigned_to_id?: number | null
-  zone_id?: number
-  zone_name?: string
+  location_label?: string
 }
 
-type Zone = { id: number; name: string }
 type Technician = { id: number; first_name: string; last_name: string }
 
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
@@ -41,8 +39,9 @@ function isOverdue(t: Ticket): boolean {
 }
 
 // Forward status transitions a staff member can trigger from the queue.
+// (Technician-only transitions are still enforced server-side.)
 const NEXT_STATUS: Record<string, TicketStatus | null> = {
-  created: null,
+  created: null, // use Assign instead
   assigned: 'in_progress',
   in_progress: 'resolved',
   resolved: 'closed',
@@ -57,21 +56,19 @@ export default function TicketsPage() {
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
 
-  const [zones, setZones] = useState<Zone[]>([])
   const [technicians, setTechnicians] = useState<Technician[]>([])
 
   // Filters
   const [status, setStatus] = useState<string>('')
   const [priority, setPriority] = useState<string>('')
   const [category, setCategory] = useState<string>('')
-  const [zoneId, setZoneId] = useState<string>('')
 
-  // Row-level "assign" picker
+  // Row-level "assign" picker: which ticket id has its technician select open
   const [assigningId, setAssigningId] = useState<number | null>(null)
   const [assignTechId, setAssignTechId] = useState<string>('')
   const [busyId, setBusyId] = useState<number | null>(null)
 
-  const hasActiveFilters = !!(status || priority || category || zoneId)
+  const hasActiveFilters = !!(status || priority || category)
 
   function authHeaders() {
     const token = localStorage.getItem('token')
@@ -79,19 +76,8 @@ export default function TicketsPage() {
   }
 
   useEffect(() => {
-    const fetchZones = async () => {
-      try {
-        const res = await fetch('http://localhost:4000/api/zones', { headers: authHeaders() })
-        const data = await res.json()
-        if (res.ok) setZones(Array.isArray(data) ? data : data.data || [])
-      } catch {
-        // silent
-      }
-    }
-    fetchZones()
-  }, [])
-
-  useEffect(() => {
+    // Technician list, needed for the Assign action. Only staff can assign,
+    // so no point fetching it for other roles.
     if (!user || !['admin', 'support_agent'].includes(user.role)) return
     const fetchTechnicians = async () => {
       try {
@@ -99,7 +85,7 @@ export default function TicketsPage() {
         const data = await res.json()
         if (res.ok) setTechnicians(Array.isArray(data) ? data : data.data || [])
       } catch {
-        // silent
+        // silent — Assign action will just show no technicians available
       }
     }
     fetchTechnicians()
@@ -113,7 +99,6 @@ export default function TicketsPage() {
       if (status) params.set('status', status)
       if (priority) params.set('priority', priority)
       if (category) params.set('category', category)
-      if (zoneId) params.set('zone_id', zoneId)
 
       const qs = params.toString()
       const res = await fetch(`http://localhost:4000/api/tickets${qs ? `?${qs}` : ''}`, {
@@ -132,13 +117,12 @@ export default function TicketsPage() {
   useEffect(() => {
     fetchTickets()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, priority, category, zoneId])
+  }, [status, priority, category])
 
   function clearFilters() {
     setStatus('')
     setPriority('')
     setCategory('')
-    setZoneId('')
   }
 
   async function handleAssign(ticketId: number) {
@@ -182,57 +166,57 @@ export default function TicketsPage() {
     }
   }
 
+  // Backend already scopes the query by role (employees see their own,
+  // technicians see only what's assigned to them) — this just mirrors
+  // that in the copy/UI so it doesn't read as a bug.
   const isTechnician = user?.role === 'technician'
   const canCreate = user ? ['admin', 'support_agent', 'employee'].includes(user.role) : false
   const canFilter = user ? ['admin', 'support_agent'].includes(user.role) : false
   const canAct = user ? ['admin', 'support_agent'].includes(user.role) : false
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-bold text-foreground">
             {isTechnician ? 'My Assigned Tickets' : 'Ticket Queue'}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isTechnician ? 'Manage and update your ongoing interventions.' : 'View, filter, and manage all incoming support requests.'}
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {isTechnician ? 'Tickets assigned to you' : 'All support requests'}
           </p>
         </div>
         {canCreate && (
           <Link
             href="/tickets/new"
-            className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground text-sm font-semibold px-4 py-2.5 rounded-lg shadow-sm hover:bg-primary/90 hover:shadow transition-all active:scale-[0.98]"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" /> New Ticket
           </Link>
         )}
       </div>
 
-      {/* Filters Section */}
+      {/* Filters — admin/support_agent only; employees & technicians already
+          get a pre-scoped list from the backend so filtering the queue
+          doesn't apply the same way to them. */}
       {canFilter && (
-        <div className="bg-card shadow-sm border border-border/60 rounded-xl p-5 transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-muted rounded-md">
-                <Filter className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <span className="text-sm font-semibold text-foreground">Filter Tickets</span>
-            </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Filters</span>
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted px-2.5 py-1.5 rounded-md transition-colors"
+                className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="w-3.5 h-3.5" /> Clear All
+                <X className="w-3 h-3" /> Clear
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <select
               value={status}
               onChange={e => setStatus(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-background border border-border/80 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-shadow cursor-pointer appearance-none"
+              className="px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               <option value="">All Statuses</option>
               {STATUSES.map(s => (
@@ -243,7 +227,7 @@ export default function TicketsPage() {
             <select
               value={priority}
               onChange={e => setPriority(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-background border border-border/80 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-shadow cursor-pointer appearance-none"
+              className="px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               <option value="">All Priorities</option>
               {PRIORITIES.map(p => (
@@ -254,177 +238,108 @@ export default function TicketsPage() {
             <select
               value={category}
               onChange={e => setCategory(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-background border border-border/80 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-shadow cursor-pointer appearance-none"
+              className="px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               <option value="">All Categories</option>
               {CATEGORIES.map(c => (
                 <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>
               ))}
             </select>
-
-            <select
-              value={zoneId}
-              onChange={e => setZoneId(e.target.value)}
-              disabled={zones.length === 0}
-              className="w-full px-3.5 py-2.5 bg-background border border-border/80 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-shadow cursor-pointer appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">All Zones</option>
-              {zones.map(z => (
-                <option key={z.id} value={z.id}>{z.name}</option>
-              ))}
-            </select>
           </div>
         </div>
       )}
 
-      {/* Status Messages */}
-      {error && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-lg flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" /> {error}
-        </div>
-      )}
-      {actionError && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-lg flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" /> {actionError}
-        </div>
-      )}
+      {loading && <p className="text-sm text-muted-foreground">Loading tickets…</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {/* Data Table */}
-      {!error && (
-        <div className="bg-card border border-border/60 shadow-sm rounded-xl overflow-hidden relative min-h-[400px]">
-          {loading && (
-            <div className="absolute inset-0 bg-background/50 backdrop-blur-[2px] z-10 flex items-center justify-center">
-              <div className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-full shadow-lg">
-                <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                <span className="text-sm font-medium text-muted-foreground">Loading tickets...</span>
-              </div>
-            </div>
-          )}
-
+      {!loading && !error && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border/60">
-                <tr>
-                  <th className="px-5 py-3.5 font-medium">Title</th>
-                  <th className="px-5 py-3.5 font-medium">Category</th>
-                  <th className="px-5 py-3.5 font-medium">Priority</th>
-                  <th className="px-5 py-3.5 font-medium">Zone</th>
-                  <th className="px-5 py-3.5 font-medium">Status</th>
-                  {!isTechnician && <th className="px-5 py-3.5 font-medium hidden lg:table-cell">Assigned To</th>}
-                  <th className="px-5 py-3.5 font-medium hidden lg:table-cell">Created</th>
-                  {canAct && <th className="px-5 py-3.5 font-medium text-right">Actions</th>}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wider">
+                  <th className="px-4 py-3">Title</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Priority</th>
+                  <th className="px-4 py-3">Location</th>
+                  <th className="px-4 py-3">Status</th>
+                  {!isTechnician && <th className="px-4 py-3 hidden lg:table-cell">Assigned To</th>}
+                  <th className="px-4 py-3 hidden lg:table-cell">Created</th>
+                  {canAct && <th className="px-4 py-3">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
-                {!loading && tickets.length === 0 ? (
+              <tbody className="divide-y divide-border">
+                {tickets.length === 0 ? (
                   <tr>
-                    <td colSpan={isTechnician ? 6 : 8} className="px-5 py-16">
-                      <div className="flex flex-col items-center justify-center text-center">
-                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-                          <Inbox className="w-6 h-6 text-muted-foreground" />
-                        </div>
-                        <h3 className="text-base font-semibold text-foreground">No tickets found</h3>
-                        <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                          {hasActiveFilters 
-                            ? "We couldn't find any tickets matching your current filters." 
-                            : "There are currently no tickets in the queue."}
-                        </p>
-                        {hasActiveFilters && (
-                          <button
-                            onClick={clearFilters}
-                            className="mt-4 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 px-4 py-2 rounded-lg transition-colors"
-                          >
-                            Clear all filters
-                          </button>
-                        )}
-                      </div>
+                    <td colSpan={isTechnician ? 6 : 8} className="px-4 py-8 text-center text-muted-foreground">
+                      {hasActiveFilters ? 'No tickets match these filters.' : 'No tickets found.'}
                     </td>
                   </tr>
                 ) : (
                   tickets.map(ticket => {
                     const overdue = isOverdue(ticket)
                     const nextStatus = NEXT_STATUS[ticket.status] ?? null
-                    
                     return (
                       <tr
                         key={ticket.id}
-                        className={`group transition-colors ${
-                          overdue 
-                            ? 'bg-destructive/[0.03] hover:bg-destructive/[0.06] border-l-2 border-l-destructive/60' 
-                            : 'hover:bg-muted/40 border-l-2 border-l-transparent'
-                        }`}
+                        className={`transition-colors ${overdue ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-accent'}`}
                       >
-                        <td className="px-5 py-4">
-                          <Link 
-                            href={`/tickets/${ticket.id}`} 
-                            className="font-medium text-foreground hover:text-primary transition-colors line-clamp-1"
-                            title={ticket.title}
-                          >
+                        <td className="px-4 py-3.5">
+                          <Link href={`/tickets/${ticket.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
                             {ticket.title}
                           </Link>
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3.5">
                           <CategoryBadge category={ticket.category as any} size="sm" />
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3.5">
                           <PriorityBadge priority={ticket.priority as any} size="sm" />
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-muted-foreground">
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 opacity-70" />
-                            <span className="truncate max-w-[120px]">{ticket.zone_name ?? '—'}</span>
-                          </div>
+                        {/* Exact picked location */}
+                        <td className="px-4 py-3.5 text-xs text-muted-foreground max-w-[160px] truncate" title={ticket.location_label || undefined}>
+                          {ticket.location_label ?? '—'}
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1.5">
                             <StatusBadge status={ticket.status as any} size="sm" />
                             {overdue && (
-                              <div className="group relative flex items-center justify-center">
-                                <AlertTriangle className="w-4 h-4 text-destructive/80" />
-                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 bg-foreground text-background text-[10px] rounded whitespace-nowrap z-10">
-                                  Past SLA target
-                                </span>
-                              </div>
+                              <span title="Past SLA target">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                              </span>
                             )}
                           </div>
                         </td>
                         {!isTechnician && (
-                          <td className="px-5 py-4 hidden lg:table-cell whitespace-nowrap">
+                          <td className="px-4 py-3.5 hidden lg:table-cell">
                             {ticket.assigned_to_name ? (
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0 border border-primary/20">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
                                   {getInitials(ticket.assigned_to_name.split(' ')[0], ticket.assigned_to_name.split(' ')[1] || '')}
                                 </div>
-                                <span className="text-sm font-medium text-foreground truncate max-w-[140px]">
+                                <span className="text-xs text-foreground truncate max-w-[120px]">
                                   {ticket.assigned_to_name}
                                 </span>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <User className="w-3.5 h-3.5 opacity-50" />
-                                <span className="text-sm italic">Unassigned</span>
-                              </div>
+                              <span className="text-xs text-muted-foreground">Unassigned</span>
                             )}
                           </td>
                         )}
-                        <td className="px-5 py-4 hidden lg:table-cell whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 text-muted-foreground">
-                            <Clock className="w-3.5 h-3.5 opacity-70" />
-                            <span>{timeAgo(ticket.created_at)}</span>
-                          </div>
+                        <td className="px-4 py-3.5 hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                          {timeAgo(ticket.created_at)}
                         </td>
                         {canAct && (
-                          <td className="px-5 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              
-                              {/* Assign Action */}
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Assign — only makes sense while unassigned */}
                               {!ticket.assigned_to_id && ticket.status === 'created' && (
                                 assigningId === ticket.id ? (
-                                  <div className="flex items-center gap-1.5 p-1 bg-muted/50 rounded-lg border border-border/80 shadow-sm animate-in fade-in slide-in-from-right-2">
+                                  <div className="flex items-center gap-1.5">
                                     <select
                                       value={assignTechId}
                                       onChange={e => setAssignTechId(e.target.value)}
-                                      className="px-2.5 py-1.5 bg-background border border-border rounded-md text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 min-w-[140px]"
+                                      className="px-2 py-1 bg-background border border-border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
                                     >
                                       <option value="">Choose technician…</option>
                                       {technicians.map(t => (
@@ -434,36 +349,35 @@ export default function TicketsPage() {
                                     <button
                                       onClick={() => handleAssign(ticket.id)}
                                       disabled={!assignTechId || busyId === ticket.id}
-                                      className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                                      className="px-2 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50"
                                     >
                                       {busyId === ticket.id ? '…' : 'Confirm'}
                                     </button>
                                     <button
                                       onClick={() => { setAssigningId(null); setAssignTechId('') }}
-                                      className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded-md transition-colors"
-                                      title="Cancel"
+                                      className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
                                     >
-                                      <X className="w-3.5 h-3.5" />
+                                      Cancel
                                     </button>
                                   </div>
                                 ) : (
                                   <button
                                     onClick={() => setAssigningId(ticket.id)}
-                                    className="px-3 py-1.5 bg-primary/10 text-primary rounded-md text-xs font-semibold hover:bg-primary/20 transition-colors"
+                                    className="px-2.5 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium hover:bg-primary/20 transition-colors"
                                   >
                                     Assign
                                   </button>
                                 )
                               )}
 
-                              {/* Status Change Action */}
-                              {nextStatus && assigningId !== ticket.id && (
+                              {/* Status change */}
+                              {nextStatus && (
                                 <button
                                   onClick={() => handleStatusChange(ticket.id, nextStatus)}
                                   disabled={busyId === ticket.id}
-                                  className="px-3 py-1.5 bg-accent/60 text-accent-foreground border border-border/50 rounded-md text-xs font-semibold hover:bg-accent hover:border-border transition-all disabled:opacity-50 capitalize whitespace-nowrap shadow-sm"
+                                  className="px-2.5 py-1 bg-accent text-foreground rounded-md text-xs font-medium hover:bg-accent/70 transition-colors disabled:opacity-50 capitalize"
                                 >
-                                  {busyId === ticket.id ? 'Updating…' : `Mark ${STATUS_LABELS[nextStatus] || nextStatus}`}
+                                  {busyId === ticket.id ? '…' : `Mark ${STATUS_LABELS[nextStatus] || nextStatus}`}
                                 </button>
                               )}
                             </div>
