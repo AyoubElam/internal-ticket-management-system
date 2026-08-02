@@ -29,6 +29,28 @@ async function notifyUsers(userIds: number[], message: string): Promise<void> {
   )
 }
 
+// Shared visibility check — same rule used by getTicket and now the
+// timeline endpoint: employee sees only their own, technician only what's
+// assigned to them, admin/support_agent see everything.
+async function assertCanViewTicket(
+  req: AuthRequest, ticketId: string
+): Promise<{ ok: true; ticket: mysql.RowDataPacket } | { ok: false; status: number; error: string }> {
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(
+    `SELECT id, created_by_id, assigned_to_id FROM tickets WHERE id = ?`,
+    [ticketId]
+  )
+  const ticket = rows[0]
+  if (!ticket) return { ok: false, status: 404, error: 'Ticket not found.' }
+
+  if (req.user!.role === 'employee' && ticket.created_by_id !== req.user!.userId) {
+    return { ok: false, status: 403, error: 'Forbidden.' }
+  }
+  if (req.user!.role === 'technician' && ticket.assigned_to_id !== req.user!.userId) {
+    return { ok: false, status: 403, error: 'Forbidden.' }
+  }
+  return { ok: true, ticket }
+}
+
 /* ── GET /tickets ── */
 export async function listTickets(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -121,6 +143,35 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
     const visibleComments = isStaff ? comments : comments.filter(c => !c.is_internal)
 
     res.json({ ...rows[0], comments: visibleComments })
+  } catch (err) { next(err) }
+}
+
+/* ── GET /tickets/:id/timeline ──
+   Full chronological activity log for one ticket — creation, edits,
+   status changes, cancellation, rating, etc. Same visibility rule as
+   getTicket: employee (own ticket only), technician (assigned only),
+   admin/support_agent (any). Available to all three roles the person
+   asked for (employee, agent, admin) via that shared rule. */
+export async function getTicketTimeline(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+
+    const access = await assertCanViewTicket(req, id)
+    if (!access.ok) { res.status(access.status).json({ error: access.error }); return }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT
+         a.id, a.action, a.details, a.created_at,
+         CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+         u.role AS user_role
+       FROM activity_logs a
+       JOIN users u ON u.id = a.user_id
+       WHERE a.entity_type = 'ticket' AND a.entity_id = ?
+       ORDER BY a.created_at ASC`,
+      [id]
+    )
+
+    res.json(rows)
   } catch (err) { next(err) }
 }
 
@@ -244,11 +295,29 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
       params
     )
 
-    // Activity log
+    // Activity log — write a clean, human-readable summary keyed to the
+    // simplified 4-stage timeline (Created / Assigned / In Progress /
+    // Resolved) instead of dumping raw request JSON.
+    let logAction = 'UPDATE_TICKET'
+    let logDetails = 'Ticket updated'
+
+    if (status === 'resolved') {
+      logAction = 'RESOLVE_TICKET'
+      logDetails = 'Ticket resolved'
+    } else if (status === 'closed') {
+      logAction = 'CLOSE_TICKET'
+      logDetails = 'Ticket closed'
+    } else if (status && status !== ticket.status) {
+      logAction = 'UPDATE_TICKET'
+      logDetails = `Status changed to ${status.replace('_', ' ')}`
+    } else if (isAdmin && (priority || title || description || category)) {
+      logDetails = 'Ticket details updated'
+    }
+
     await pool.query(
       `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
-       VALUES (?, 'UPDATE_TICKET', 'ticket', ?, ?)`,
-      [req.user!.userId, id, `Updated: ${JSON.stringify(req.body)}`]
+       VALUES (?, ?, 'ticket', ?, ?)`,
+      [req.user!.userId, logAction, id, logDetails]
     )
 
     // Notifications

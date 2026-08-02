@@ -132,6 +132,11 @@ export async function getTechnicianRating(req: AuthRequest, res: Response, next:
    All technicians with their average rating — admin/agent leaderboard view. */
 export async function listTechnicianRatings(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
+    // MariaDB rejects ordering by an aggregate ALIAS wrapped in another
+    // expression (e.g. "avg_rating IS NULL") — "reference to group function
+    // not supported" in strict mode. Using the full AVG(...) expression
+    // directly in ORDER BY sidesteps that; the alias is still fine to
+    // select and to read from the JSON response.
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT
          u.id AS technician_id,
@@ -142,7 +147,7 @@ export async function listTechnicianRatings(req: AuthRequest, res: Response, nex
        LEFT JOIN ticket_ratings r ON r.technician_id = u.id
        WHERE u.role = 'technician'
        GROUP BY u.id
-       ORDER BY avg_rating IS NULL, avg_rating DESC`
+       ORDER BY AVG(r.rating) IS NULL, AVG(r.rating) DESC`
     )
     res.json(rows)
   } catch (err) { next(err) }

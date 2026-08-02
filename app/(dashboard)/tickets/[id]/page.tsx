@@ -6,6 +6,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, Clock, MessageSquare,
   Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2, Wrench, Star,
+  History, PlusCircle, UserCheck,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
@@ -64,6 +65,35 @@ type TechnicianRatingSummary = {
   avg_rating: number | null
 }
 
+type TimelineEntry = {
+  id: number
+  action: string
+  details: string
+  created_at: string
+  user_name: string
+  user_role: string
+}
+
+// The 4 simple stages we show, in order. `actions` lists which
+// activity_logs.action values count as "reaching" that stage — the first
+// matching log entry (chronologically) is used to show who/when.
+const STAGES: {
+  key: TicketStatus
+  label: string
+  icon: React.ReactNode
+  actions: string[]
+}[] = [
+  { key: 'created',     label: 'Created',      icon: <PlusCircle className="w-4 h-4" />,   actions: ['CREATE_TICKET'] },
+  { key: 'assigned',    label: 'Assigned',     icon: <UserCheck className="w-4 h-4" />,     actions: ['ASSIGN_TICKET'] },
+  { key: 'in_progress', label: 'In Progress',  icon: <Wrench className="w-4 h-4" />,        actions: ['IN_PROGRESS_TICKET', 'UPDATE_TICKET'] },
+  { key: 'resolved',    label: 'Resolved',     icon: <CheckCircle2 className="w-4 h-4" />,  actions: ['RESOLVE_TICKET'] },
+]
+
+// Order used to figure out how far along the ticket currently is,
+// independent of which log rows exist (a ticket can be resolved even if
+// some intermediate row is missing/named differently).
+const STATUS_ORDER: TicketStatus[] = ['created', 'assigned', 'in_progress', 'resolved']
+
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -104,6 +134,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   // Technician's overall average — shown to admin/agent
   const [techRating, setTechRating] = useState<TechnicianRatingSummary | null>(null)
 
+  // Timeline — full activity history for this ticket only (GET
+  // /tickets/:id/timeline is scoped server-side by entity_id). Visible to
+  // employee (own ticket), technician (assigned ticket), admin/agent (any).
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([])
+  const [timelineLoading, setTimelineLoading] = useState(true)
+  const [timelineError, setTimelineError] = useState('')
+
   // Safe to compute before the early returns below — doesn't touch `ticket`.
   const isAdmin = user?.role === 'admin'
   const isAgent = user?.role === 'support_agent'
@@ -112,6 +149,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     fetchTicket()
+    fetchTimeline()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   // Fetch technicians for the assign dropdown. Must live before any early
@@ -134,8 +173,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   }, [canManage])
 
   // Technician's average rating — shown to admin/support_agent once a
-  // technician is assigned. Technicians could see their own via the same
-  // endpoint, but that's not surfaced here (no need on this page for them).
+  // technician is assigned.
   useEffect(() => {
     if (!canManage || !ticket?.assigned_to_id) return
     const fetchTechRating = async () => {
@@ -172,6 +210,24 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       setError(err.message || 'Something went wrong.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchTimeline() {
+    setTimelineLoading(true)
+    setTimelineError('')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`http://localhost:4000/api/tickets/${id}/timeline`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load timeline.')
+      setTimeline(data)
+    } catch (err: any) {
+      setTimelineError(err.message || 'Failed to load timeline.')
+    } finally {
+      setTimelineLoading(false)
     }
   }
 
@@ -223,6 +279,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     try {
       await patchTicket({ status: newStatus })
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       setManageError(err.message || 'Something went wrong.')
     } finally {
@@ -237,6 +294,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     try {
       await patchTicket({ priority: newPriority })
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       setManageError(err.message || 'Something went wrong.')
     } finally {
@@ -264,6 +322,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to assign technician.')
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       setManageError(err.message || 'Something went wrong.')
     } finally {
@@ -333,6 +392,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       if (!res.ok) throw new Error(data.error || 'Failed to update ticket.')
       setEditing(false)
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       setEditError(err.message || 'Something went wrong.')
     } finally {
@@ -354,6 +414,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to submit rating.')
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       setRatingError(err.message || 'Something went wrong.')
     } finally {
@@ -375,6 +436,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to cancel ticket.')
       fetchTicket()
+      fetchTimeline()
     } catch (err: any) {
       alert(err.message || 'Something went wrong.')
     } finally {
@@ -509,12 +571,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {/* Manage: assign + status (+ priority for admin only).
-              admin/support_agent ONLY. Agents can only touch status and
-              assign a technician here — nothing else. Admin gets priority
-              too; title/description are edited via the form above instead.
-              Technicians no longer get status buttons here at all (their
-              PATCH /tickets/:id is blocked server-side). They get a
-              pointer to the Interventions page instead, further below. */}
+              admin/support_agent ONLY. */}
           {canManage && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground">Manage Ticket</h2>
@@ -701,6 +758,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             </div>
           )}
 
+          {/* Timeline — simple 4-stage progress: Created → Assigned →
+              In Progress → Resolved. Scoped to THIS ticket only (backend
+              filters by entity_id = ticket id). */}
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <History className="w-4 h-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold text-foreground">Timeline</h2>
+            </div>
+
+            <div className="p-5">
+              {timelineLoading && <p className="text-sm text-muted-foreground">Loading timeline…</p>}
+              {!timelineLoading && timelineError && <p className="text-sm text-destructive">{timelineError}</p>}
+
+              {!timelineLoading && !timelineError && (
+                <SimpleTimeline entries={timeline} currentStatus={ticket.status} />
+              )}
+            </div>
+          </div>
+
           {/* Comments */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2">
@@ -841,6 +917,119 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
         <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
         <p className="text-xs text-foreground mt-0.5 break-words">{value}</p>
       </div>
+    </div>
+  )
+}
+
+// Colored pill per stage — same visual language as the original design's
+// action-type chips.
+const STAGE_BADGE_COLOR: Record<string, string> = {
+  created:     'bg-blue-500/15 text-blue-400',
+  assigned:    'bg-green-500/15 text-green-400',
+  in_progress: 'bg-amber-500/15 text-amber-400',
+  resolved:    'bg-emerald-500/15 text-emerald-500',
+}
+
+// Vertical stagger pattern (px) so consecutive cards zig-zag like the
+// original Jira/Notion-style timeline.
+const STAGE_STAGGER = [0, 56, 0, 56]
+
+// Small connected-card horizontal timeline, same look as before, but
+// fixed to only the 4 clean stages (Created / Assigned / In Progress /
+// Resolved) instead of every raw activity_logs action.
+function SimpleTimeline({ entries, currentStatus }: { entries: TimelineEntry[]; currentStatus: TicketStatus }) {
+  const CARD_WIDTH = 190
+  const GAP = 56
+
+  const stageEntries = STAGES.map(stage => {
+    const match = entries.find(e => stage.actions.includes(e.action))
+    return { ...stage, entry: match }
+  })
+
+  const effectiveStatus = currentStatus === 'closed' ? 'resolved' : currentStatus
+  const currentIndex = currentStatus === 'cancelled'
+    ? 0
+    : STATUS_ORDER.indexOf(effectiveStatus as typeof STATUS_ORDER[number])
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto pb-2">
+        <div
+          className="relative"
+          style={{
+            width: stageEntries.length * (CARD_WIDTH + GAP),
+            height: Math.max(...STAGE_STAGGER) + 130,
+          }}
+        >
+          {/* Connectors drawn first so cards sit visually on top */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+            {stageEntries.slice(0, -1).map((_, i) => {
+              const x1 = i * (CARD_WIDTH + GAP) + CARD_WIDTH
+              const y1 = STAGE_STAGGER[i % STAGE_STAGGER.length] + 20
+              const x2 = (i + 1) * (CARD_WIDTH + GAP)
+              const y2 = STAGE_STAGGER[(i + 1) % STAGE_STAGGER.length] + 20
+              const midX = (x1 + x2) / 2
+              const reached = i < currentIndex
+              return (
+                <path
+                  key={i}
+                  d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                  fill="none"
+                  stroke={reached ? 'var(--color-primary, #6366f1)' : '#f5c451'}
+                  strokeWidth={2}
+                  opacity={reached ? 1 : 0.5}
+                />
+              )
+            })}
+          </svg>
+
+          {stageEntries.map((stage, i) => {
+            const done = i <= currentIndex
+            const top = STAGE_STAGGER[i % STAGE_STAGGER.length]
+            const badgeColor = STAGE_BADGE_COLOR[stage.key] || 'bg-muted text-muted-foreground'
+
+            return (
+              <div
+                key={stage.key}
+                className="absolute"
+                style={{ left: i * (CARD_WIDTH + GAP), top, width: CARD_WIDTH }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span
+                    className={cn(
+                      'flex items-center justify-center w-7 h-7 rounded-full shrink-0 border-2 transition-colors',
+                      done
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-card border-border text-muted-foreground'
+                    )}
+                  >
+                    {stage.icon}
+                  </span>
+                  {stage.entry && (
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                      {timeAgo(stage.entry.created_at)}
+                    </span>
+                  )}
+                </div>
+
+                <div className={cn(
+                  'bg-card border rounded-lg px-3 py-2.5 shadow-sm space-y-1.5 transition-colors',
+                  done ? 'border-border' : 'border-border/50 opacity-60'
+                )}>
+                  <p className="text-xs font-semibold text-foreground truncate">{stage.label}</p>
+                  <span className={cn('inline-block text-[10px] font-medium px-2 py-0.5 rounded-full', badgeColor)}>
+                    {stage.entry ? stage.entry.user_name : done ? 'Reached' : 'Pending'}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {currentStatus === 'cancelled' && (
+        <p className="text-xs text-destructive">This ticket was cancelled before it progressed further.</p>
+      )}
     </div>
   )
 }

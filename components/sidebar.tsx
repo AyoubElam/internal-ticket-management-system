@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Ticket, Users, BarChart3,
-  Wrench, Bell, LogOut, Wifi, ChevronRight, X
+  Wrench, Bell, LogOut, Wifi, ChevronRight, X, Star
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { ROLE_LABELS } from '@/lib/helpers'
@@ -43,6 +43,12 @@ const NAV_ITEMS: NavItem[] = [
     href:  '/analytics',
     label: 'Analytics',
     icon:  <BarChart3 className="w-4 h-4" />,
+    roles: ['admin', 'support_agent'],
+  },
+  {
+    href:  '/ratings',
+    label: 'Ratings',
+    icon:  <Star className="w-4 h-4" />,
     roles: ['admin', 'support_agent'],
   },
   {
