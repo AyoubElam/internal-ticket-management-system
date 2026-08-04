@@ -10,17 +10,17 @@ interface StatCardProps {
 }
 
 const COLOR_MAP = {
-  blue:    'bg-blue-500/10 text-blue-400',
-  green:   'bg-green-500/10 text-green-400',
-  amber:   'bg-amber-500/10 text-amber-400',
-  red:     'bg-red-500/10 text-red-400',
-  purple:  'bg-purple-500/10 text-purple-400',
-  default: 'bg-muted text-muted-foreground',
+  blue:    'bg-blue-100 text-blue-700',
+  green:   'bg-emerald-100 text-emerald-700',
+  amber:   'bg-amber-100 text-amber-700',
+  red:     'bg-rose-100 text-rose-700',
+  purple:  'bg-purple-100 text-purple-700',
+  default: 'bg-slate-100 text-slate-700',
 }
 
 export default function StatCard({ title, value, subtitle, icon, color = 'default', trend }: StatCardProps) {
   return (
-    <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-3">
+    <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <p className="text-sm text-muted-foreground font-medium">{title}</p>
         <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', COLOR_MAP[color])}>

@@ -467,3 +467,103 @@ export async function cancelTicket(req: AuthRequest, res: Response, next: NextFu
     res.json({ message: 'Ticket cancelled.' })
   } catch (err) { next(err) }
 }
+
+/* ── PATCH /tickets/bulk ──
+   Bulk status and/or priority change for admin/support_agent, driven by
+   the ticket queue's multi-select toolbar. Each ticket is validated
+   individually against the same rules as the single-ticket updateTicket
+   endpoint (support_agent: status only; admin: status + priority) so
+   nothing here bypasses the normal permission model — it's just looped.
+
+   Only allows the same "safe" bulk-friendly transitions: resolved→closed
+   and cancelling. Assignment (created→pending_assignment) is NOT done
+   here — that goes through the dedicated bulk-assign intervention
+   endpoint, since it also has to create per-ticket intervention rows and
+   respect the technician-acceptance flow. */
+export async function bulkUpdateTickets(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { ticket_ids, status, priority } = req.body as {
+      ticket_ids: number[]; status?: TicketStatus; priority?: TicketPriority
+    }
+
+    if (!Array.isArray(ticket_ids) || ticket_ids.length === 0) {
+      res.status(400).json({ error: 'ticket_ids must be a non-empty array.' })
+      return
+    }
+    if (ticket_ids.length > 100) {
+      res.status(400).json({ error: 'Cannot bulk-update more than 100 tickets at once.' })
+      return
+    }
+    if (!status && !priority) {
+      res.status(400).json({ error: 'Provide a status and/or priority to apply.' })
+      return
+    }
+
+    const isAdmin = req.user!.role === 'admin'
+    if (priority && !isAdmin) {
+      res.status(403).json({ error: 'Only admins can bulk-update priority.' })
+      return
+    }
+
+    // Bulk status changes are limited to the safe, unambiguous transitions.
+    // Anything involving assignment goes through /interventions/bulk-assign
+    // instead, since it needs the acceptance flow.
+    const ALLOWED_BULK_STATUSES: TicketStatus[] = ['closed', 'cancelled']
+    if (status && !ALLOWED_BULK_STATUSES.includes(status)) {
+      res.status(400).json({
+        error: `Bulk status change to "${status}" isn't supported. Use bulk-assign for assignment, or update tickets individually for other transitions.`,
+      })
+      return
+    }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, created_by_id FROM tickets WHERE id IN (?)`,
+      [ticket_ids]
+    )
+
+    const results: { id: number; ok: boolean; error?: string }[] = []
+
+    for (const ticket of rows) {
+      // Same per-ticket guard rules as the single-ticket endpoints.
+      if (status === 'closed' && ticket.status !== 'resolved') {
+        results.push({ id: ticket.id, ok: false, error: 'Not resolved yet.' })
+        continue
+      }
+      if (status === 'cancelled' && ticket.status !== 'created') {
+        results.push({ id: ticket.id, ok: false, error: 'Already being handled.' })
+        continue
+      }
+
+      const fields: string[] = ['updated_at = NOW()']
+      const params: unknown[] = []
+      if (status)   { fields.push('status = ?');   params.push(status) }
+      if (priority) { fields.push('priority = ?'); params.push(priority) }
+      if (status === 'closed') fields.push('resolved_at = COALESCE(resolved_at, NOW())')
+      params.push(ticket.id)
+
+      await pool.query(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, params)
+
+      const action = status === 'closed' ? 'CLOSE_TICKET' : status === 'cancelled' ? 'CANCEL_TICKET' : 'UPDATE_TICKET'
+      const details = status === 'closed' ? 'Ticket closed (bulk action)'
+        : status === 'cancelled' ? 'Ticket cancelled (bulk action)'
+        : `Priority set to ${priority} (bulk action)`
+
+      await pool.query(
+        `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, 'ticket', ?, ?)`,
+        [req.user!.userId, action, ticket.id, details]
+      )
+
+      results.push({ id: ticket.id, ok: true })
+    }
+
+    const notFoundIds = ticket_ids.filter(id => !rows.some(r => r.id === id))
+    for (const id of notFoundIds) results.push({ id, ok: false, error: 'Not found.' })
+
+    const succeeded = results.filter(r => r.ok).length
+    res.json({
+      message: `${succeeded}/${ticket_ids.length} ticket(s) updated.`,
+      results,
+    })
+  } catch (err) { next(err) }
+}

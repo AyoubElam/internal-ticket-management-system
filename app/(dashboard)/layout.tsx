@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { NotificationsProvider, useNotifications } from '@/lib/notifications-context'
 import Sidebar from '@/components/sidebar'
 import Topbar from '@/components/topbar'
+import { cn } from '@/lib/utils'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard':      'Dashboard',
@@ -25,6 +26,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const { unreadCount } = useNotifications()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  const toggleSidebar = () => {
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(true)
+    } else {
+      setSidebarCollapsed(prev => !prev)
+    }
+  }
 
   useEffect(() => {
     if (!loading && !user) {
@@ -45,20 +55,42 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   )?.[1] ?? 'SIGDI'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        unreadCount={unreadCount}
-      />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background/50 p-2 md:p-3">
+      {/* Desktop Sidebar Container */}
+      <div 
+        className={cn(
+          "hidden lg:block h-full transition-all duration-300 shrink-0",
+          sidebarCollapsed ? "w-0 opacity-0 mr-0 overflow-hidden" : "w-64 opacity-100 mr-2 md:mr-3"
+        )}
+      >
+        <div className="w-64 h-full">
+          <Sidebar
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            unreadCount={unreadCount}
+          />
+        </div>
+      </div>
+
+      {/* Mobile Sidebar */}
+      <div className="lg:hidden">
+        <Sidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          unreadCount={unreadCount}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-card rounded-2xl shadow-sm border border-border/40 relative">
         <Topbar
-          onMenuClick={() => setSidebarOpen(true)}
+          onMenuClick={toggleSidebar}
           title={title}
           unreadCount={unreadCount}
         />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex justify-center">
+          <div className="w-full max-w-6xl">
+            {children}
+          </div>
         </main>
       </div>
     </div>

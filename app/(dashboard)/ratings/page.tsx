@@ -111,20 +111,20 @@ export default function RatingsLeaderboardPage() {
           )}
 
           {ranked.length > 0 && (
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="bg-card shadow-sm rounded-2xl p-6">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wider">
+                    <tr className="border-b border-border/40 text-left text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                       <th className="px-4 py-3 w-12">Rank</th>
                       <th className="px-4 py-3">Technician</th>
                       <th className="px-4 py-3">Rating</th>
                       <th className="px-4 py-3">Ratings Count</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
+                  <tbody className="divide-y divide-border/40">
                     {ranked.map((r, i) => (
-                      <tr key={r.technician_id} className="hover:bg-accent transition-colors">
+                      <tr key={r.technician_id} className="hover:bg-muted/30 transition-colors group">
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-1.5">
                             {i === 0 ? (

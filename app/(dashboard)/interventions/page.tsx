@@ -221,8 +221,8 @@ function InterventionCard({
   }
 
   return (
-    <div className="bg-card border border-border rounded-xl p-5 hover:border-primary/20 transition-colors">
-      <div className="flex items-start gap-4">
+    <div className="bg-card border-none shadow-sm rounded-2xl p-6 hover:shadow-md hover:ring-1 hover:ring-primary/20 transition-all duration-200">
+      <div className="flex flex-col md:flex-row gap-5 md:items-start">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
           intervention.status === 'completed'  ? 'bg-green-500/10' :
           intervention.status === 'traveling'  ? 'bg-blue-500/10' : 'bg-amber-500/10'
@@ -344,70 +344,73 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-xl p-5 w-full max-w-md space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Assign Technician</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex justify-end z-[100] transition-opacity">
+      <div className="bg-card border-l border-border/40 w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="flex items-center justify-between p-6 border-b border-border/40 shrink-0">
+          <h2 className="text-lg font-bold text-foreground">Assign Technician</h2>
+          <button onClick={onClose} className="p-2 -mr-2 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {err && <p className="text-xs text-destructive">{err}</p>}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {err && <div className="bg-destructive/10 text-destructive text-sm font-medium p-4 rounded-xl">{err}</div>}
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium">Ticket</label>
-          <select
-            value={ticketId}
-            onChange={e => setTicketId(e.target.value)}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-          >
-            <option value="">Select an unassigned ticket…</option>
-            {openTickets.map(t => (
-              <option key={t.id} value={t.id}>
-                #{t.id} — {t.title} ({t.priority})
-              </option>
-            ))}
-          </select>
+          <div className="space-y-2.5">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Target Ticket</label>
+            <select
+              value={ticketId}
+              onChange={e => setTicketId(e.target.value)}
+              className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer shadow-inner appearance-none"
+            >
+              <option value="">Select an unassigned ticket…</option>
+              {openTickets.map(t => (
+                <option key={t.id} value={t.id}>
+                  #{t.id} — {t.title} ({t.priority})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2.5">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Assign To</label>
+            <select
+              value={technicianId}
+              onChange={e => setTechnicianId(e.target.value)}
+              className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer shadow-inner appearance-none"
+            >
+              <option value="">Select a technician…</option>
+              {technicians.map(t => (
+                <option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2.5">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Assignment Notes (Optional)</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={4}
+              placeholder="Provide context for the technician..."
+              className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none shadow-inner"
+            />
+          </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium">Technician</label>
-          <select
-            value={technicianId}
-            onChange={e => setTechnicianId(e.target.value)}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-          >
-            <option value="">Select a technician…</option>
-            {technicians.map(t => (
-              <option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium">Notes (optional)</label>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            rows={2}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 pt-1">
+        <div className="p-6 border-t border-border/40 shrink-0 flex gap-3 bg-card">
           <button
             onClick={onClose}
-            className="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
+            className="flex-1 py-3 bg-muted text-muted-foreground font-bold text-sm rounded-xl hover:bg-muted/80 hover:text-foreground transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || !ticketId || !technicianId}
-            className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex-1 py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
           >
-            {submitting ? 'Assigning…' : 'Assign'}
+            {submitting ? 'Assigning…' : 'Confirm Assignment'}
           </button>
         </div>
       </div>

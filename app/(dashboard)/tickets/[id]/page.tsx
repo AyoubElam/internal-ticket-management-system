@@ -4,9 +4,9 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Clock, MessageSquare,
+  ArrowLeft, ArrowRight, Clock, MessageSquare,
   Lock, Send, AlertTriangle, Pencil, X, Save, CheckCircle2, Wrench, Star,
-  History, PlusCircle, UserCheck,
+  History, PlusCircle, UserCheck, FileText, UserPlus, Users, Check,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
@@ -17,16 +17,14 @@ import { cn } from '@/lib/utils'
 const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
 
-// Only admin/support_agent transitions now — technicians move a ticket
-// forward exclusively via PATCH /interventions/:id (traveling → in_progress
-// → completed), which itself syncs the ticket status server-side.
 const NEXT_STATUSES: Record<TicketStatus, TicketStatus[]> = {
-  created:     ['assigned'],
-  assigned:    [],           // technician moves this via Interventions, not here
-  in_progress: [],           // technician moves this via Interventions, not here
-  resolved:    ['closed'],
-  closed:      [],
-  cancelled:   [],
+  created:            ['assigned'],
+  pending_assignment: [],
+  assigned:           [],
+  in_progress:        [],
+  resolved:           ['closed'],
+  closed:             [],
+  cancelled:           [],
 }
 
 type Ticket = {
@@ -76,25 +74,20 @@ type TimelineEntry = {
   user_role: string
 }
 
-// The 4 simple stages we show, in order. `actions` lists which
-// activity_logs.action values count as "reaching" that stage — the first
-// matching log entry (chronologically) is used to show who/when.
 const STAGES: {
   key: TicketStatus
   label: string
   icon: React.ReactNode
   actions: string[]
 }[] = [
-  { key: 'created',     label: 'Created',      icon: <PlusCircle className="w-4 h-4" />,   actions: ['CREATE_TICKET'] },
-  { key: 'assigned',    label: 'Assigned',     icon: <UserCheck className="w-4 h-4" />,     actions: ['ASSIGN_TICKET'] },
-  { key: 'in_progress', label: 'In Progress',  icon: <Wrench className="w-4 h-4" />,        actions: ['IN_PROGRESS_TICKET', 'UPDATE_TICKET'] },
-  { key: 'resolved',    label: 'Resolved',     icon: <CheckCircle2 className="w-4 h-4" />,  actions: ['RESOLVE_TICKET'] },
+  { key: 'created',            label: 'Created',      icon: <PlusCircle className="w-4 h-4" />,   actions: ['CREATE_TICKET'] },
+  { key: 'pending_assignment', label: 'Awaiting Accept', icon: <UserCheck className="w-4 h-4" />, actions: ['ASSIGN_TICKET'] },
+  { key: 'assigned',           label: 'Accepted',     icon: <CheckCircle2 className="w-4 h-4" />, actions: ['ACCEPT_ASSIGNMENT'] },
+  { key: 'in_progress',        label: 'In Progress',  icon: <Wrench className="w-4 h-4" />,        actions: ['IN_PROGRESS_TICKET', 'UPDATE_TICKET'] },
+  { key: 'resolved',           label: 'Resolved',     icon: <CheckCircle2 className="w-4 h-4" />,  actions: ['RESOLVE_TICKET'] },
 ]
 
-// Order used to figure out how far along the ticket currently is,
-// independent of which log rows exist (a ticket can be resolved even if
-// some intermediate row is missing/named differently).
-const STATUS_ORDER: TicketStatus[] = ['created', 'assigned', 'in_progress', 'resolved']
+const STATUS_ORDER: TicketStatus[] = ['created', 'pending_assignment', 'assigned', 'in_progress', 'resolved']
 
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -119,6 +112,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   const [cancelling, setCancelling] = useState(false)
 
+  const [responding, setResponding]       = useState(false)
+  const [rejectReason, setRejectReason]   = useState('')
+  const [showRejectForm, setShowRejectForm] = useState(false)
+  const [respondError, setRespondError]   = useState('')
+
   const [updatingStatus, setUpdatingStatus]     = useState(false)
   const [updatingPriority, setUpdatingPriority] = useState(false)
   const [manageError, setManageError]           = useState('')
@@ -126,24 +124,18 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [technicians, setTechnicians] = useState<{ id: number; first_name: string; last_name: string }[]>([])
   const [assigning, setAssigning]     = useState(false)
 
-  // Rating — employee's own submission on this ticket
   const [ratingValue, setRatingValue]   = useState(0)
   const [ratingHover, setRatingHover]   = useState(0)
   const [ratingComment, setRatingComment] = useState('')
   const [submittingRating, setSubmittingRating] = useState(false)
   const [ratingError, setRatingError]   = useState('')
 
-  // Technician's overall average — shown to admin/agent
   const [techRating, setTechRating] = useState<TechnicianRatingSummary | null>(null)
 
-  // Timeline — full activity history for this ticket only (GET
-  // /tickets/:id/timeline is scoped server-side by entity_id). Visible to
-  // employee (own ticket), technician (assigned ticket), admin/agent (any).
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [timelineLoading, setTimelineLoading] = useState(true)
   const [timelineError, setTimelineError] = useState('')
 
-  // Safe to compute before the early returns below — doesn't touch `ticket`.
   const isAdmin = user?.role === 'admin'
   const isAgent = user?.role === 'support_agent'
   const canManage = isAdmin || isAgent
@@ -155,8 +147,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  // Fetch technicians for the assign dropdown. Must live before any early
-  // `return` below — hooks can't be called conditionally.
   useEffect(() => {
     if (!canManage) return
     const fetchTechnicians = async () => {
@@ -168,14 +158,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         const data = await res.json()
         if (res.ok) setTechnicians(data)
       } catch {
-        // silent — assign list just won't populate
+        // silent
       }
     }
     fetchTechnicians()
   }, [canManage])
 
-  // Technician's average rating — shown to admin/support_agent once a
-  // technician is assigned.
   useEffect(() => {
     if (!canManage || !ticket?.assigned_to_id) return
     const fetchTechRating = async () => {
@@ -187,7 +175,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         const data = await res.json()
         if (res.ok) setTechRating(data)
       } catch {
-        // silent — badge just won't show
+        // silent
       }
     }
     fetchTechRating()
@@ -249,16 +237,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   const canEdit = ['admin', 'support_agent'].includes(user.role) || ticket.assigned_to_id === user.id
   const canComment = canEdit || ticket.created_by_id === user.id
-
-  // Creator can edit their own ticket while it's still fresh ('created').
-  // Admin can edit everything, any time. Agents never get this edit form —
-  // they only get status + technician below.
   const canEditTicket = (ticket.created_by_id === user.id && ticket.status === 'created') || isAdmin
   const canCancelTicket = ticket.created_by_id === user.id && ticket.status === 'created'
 
   const isAssignedTechnician = isTechnician && ticket.assigned_to_id === user.id
-  // Status/priority management panel is admin/support_agent only now.
-  // Technicians get a pointer to the Interventions page instead — see below.
   const visibleNextStatuses = NEXT_STATUSES[ticket.status]
 
   async function patchTicket(body: Record<string, unknown>) {
@@ -304,10 +286,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  // Uses POST /interventions (not a plain PATCH) so assigning a technician
-  // here behaves the same as the Ticket Queue page: it both reassigns the
-  // ticket and creates the intervention/dispatch record the technician
-  // sees on the Interventions page.
   async function handleAssign(technicianId: number) {
     setManageError('')
     setAssigning(true)
@@ -374,9 +352,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         priority: editPrio,
       }
 
-      // Admin edits go through the general PATCH /tickets/:id (allowed to
-      // touch everything). The creator's own edit still goes through the
-      // dedicated /edit endpoint, which stays locked to status='created'.
       const isOwnerEdit = ticket.created_by_id === user!.id && !isAdmin
       const url = isOwnerEdit
         ? `http://localhost:4000/api/tickets/${ticket.id}/edit`
@@ -424,6 +399,60 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  // FIXED: previously gated on `ticket.active_intervention_id`, a field
+  // that never existed in the API response (getTicket doesn't return it),
+  // so `if (!ticket?.active_intervention_id) return` always fired first
+  // and the buttons did nothing when clicked. The URL was also wrong —
+  // the real interventions.routes.ts keys this by TICKET id (no
+  // interventions row exists yet at this point — see
+  // interventions.controller.ts's createIntervention).
+  async function handleAcceptAssignment() {
+    if (!ticket) return
+    setResponding(true)
+    setRespondError('')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`http://localhost:4000/api/interventions/assignments/${ticket.id}/accept`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to accept assignment.')
+      fetchTicket()
+      fetchTimeline()
+    } catch (err: any) {
+      setRespondError(err.message || 'Something went wrong.')
+    } finally {
+      setResponding(false)
+    }
+  }
+
+  // Same fix as accept — uses ticket.id against the real
+  // /interventions/assignments/:ticketId/reject route.
+  async function handleRejectAssignment() {
+    if (!ticket) return
+    setResponding(true)
+    setRespondError('')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`http://localhost:4000/api/interventions/assignments/${ticket.id}/reject`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: rejectReason.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to reject assignment.')
+      setShowRejectForm(false)
+      setRejectReason('')
+      fetchTicket()
+      fetchTimeline()
+    } catch (err: any) {
+      setRespondError(err.message || 'Something went wrong.')
+    } finally {
+      setResponding(false)
+    }
+  }
+
   async function handleCancelTicket() {
     if (!ticket) return
     if (!confirm('Are you sure you want to cancel this ticket? This cannot be undone.')) return
@@ -447,462 +476,512 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
-      {/* Back + header */}
-      <div className="flex items-start gap-4 flex-wrap">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+      {/* Centered Header */}
+      <div className="bg-card border border-border/80 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col items-center text-center space-y-5 relative">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mt-0.5"
+          className="absolute top-6 left-6 flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-mono text-muted-foreground">#{ticket.id}</span>
-            <CategoryBadge category={ticket.category} />
-            <PriorityBadge priority={ticket.priority} />
-            <StatusBadge status={ticket.status} />
-          </div>
-          <h1 className="text-xl font-bold text-foreground mt-1.5 text-balance">{ticket.title}</h1>
-        </div>
 
+        <div className="flex items-center justify-center gap-2 flex-wrap pt-2">
+          <span className="text-xs font-mono font-bold text-muted-foreground bg-muted/50 px-2 py-1 rounded-md">#{ticket.id}</span>
+          <CategoryBadge category={ticket.category} />
+          <PriorityBadge priority={ticket.priority} />
+          <StatusBadge status={ticket.status} />
+        </div>
+        
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground text-balance max-w-2xl">{ticket.title}</h1>
+        
         {(canEditTicket || canCancelTicket) && !editing && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-3 pt-2">
             {canEditTicket && (
               <button
                 onClick={() => setEditing(true)}
-                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
               >
-                <Pencil className="w-3.5 h-3.5" /> Edit
+                <Pencil className="w-4 h-4" /> Edit Ticket
               </button>
             )}
             {canCancelTicket && (
               <button
                 onClick={handleCancelTicket}
                 disabled={cancelling}
-                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
               >
-                <X className="w-3.5 h-3.5" /> {cancelling ? 'Cancelling…' : 'Cancel Ticket'}
+                <X className="w-4 h-4" /> {cancelling ? 'Cancelling…' : 'Cancel Ticket'}
               </button>
             )}
           </div>
         )}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5">
-        {/* Left: description + comments */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Description / Edit form */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-3">
-            {!editing ? (
-              <>
-                <h2 className="text-sm font-semibold text-foreground">Description</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">{ticket.description}</p>
-              </>
+      {/* Metadata Overview Grid (Horizontal, Centered feel) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-card border border-border/60 rounded-2xl p-5 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            {ticket.created_by_name ? getInitials(ticket.created_by_name.split(' ')[0], ticket.created_by_name.split(' ')[1] || '') : '?'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Requester</p>
+            <p className="text-sm font-semibold text-foreground truncate">{ticket.created_by_name || 'Unknown'}</p>
+          </div>
+        </div>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center text-green-500 font-bold">
+            {ticket.assigned_to_name ? getInitials(ticket.assigned_to_name.split(' ')[0], ticket.assigned_to_name.split(' ')[1] || '') : '?'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
+            <p className="text-sm font-semibold text-foreground truncate">{ticket.assigned_to_name || 'Unassigned'}</p>
+            {canManage && techRating && techRating.rating_count > 0 && (
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5">
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                <span className="font-semibold text-foreground">{techRating.avg_rating}</span>
+                <span>({techRating.rating_count})</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 flex flex-col justify-center gap-1">
+          <div className="flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Timeline</span>
+          </div>
+          <p className="text-xs font-medium text-foreground"><span className="text-muted-foreground">Created:</span> {formatDateTime(ticket.created_at)}</p>
+          <p className="text-xs font-medium text-foreground"><span className="text-muted-foreground">Updated:</span> {formatDateTime(ticket.updated_at)}</p>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="space-y-6">
+        
+        {/* Description */}
+        <div className="bg-card border border-border/80 rounded-3xl p-6 md:p-8">
+          {!editing ? (
+            <div className="space-y-4">
+              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" /> Description
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-foreground">Edit Ticket</h2>
+                <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {editError && <p className="text-xs text-destructive">{editError}</p>}
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold">Title</label>
+                <input
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  maxLength={120}
+                  className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold">Description</label>
+                <textarea
+                  value={editDesc}
+                  onChange={e => setEditDesc(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold">Category</label>
+                  <select
+                    value={editCat}
+                    onChange={e => setEditCat(e.target.value as TicketCategory)}
+                    className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold">Priority</label>
+                  <select
+                    value={editPrio}
+                    onChange={e => setEditPrio(e.target.value as TicketPriority)}
+                    className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex-1 py-2.5 border border-border rounded-xl text-sm font-semibold text-muted-foreground hover:bg-accent transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={saving || !editTitle.trim() || !editDesc.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Management & Action Bar (Centralized) */}
+        {canManage && (
+          <div className="bg-card border border-border/80 rounded-3xl p-6 md:p-8 space-y-6">
+            <h2 className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border/50 pb-3">
+              <Wrench className="w-4 h-4 text-primary" /> Management Actions
+            </h2>
+            
+            {manageError && <p className="text-xs text-destructive">{manageError}</p>}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assign Technician</label>
+                {ticket.status === 'pending_assignment' ? (
+                  <p className="text-sm font-medium text-amber-600 bg-amber-500/10 px-4 py-3 rounded-xl border border-amber-500/20">
+                    Awaiting response from {ticket.assigned_to_name}
+                  </p>
+                ) : (
+                  <div className="relative">
+                    <select 
+                      onChange={(e) => { if(e.target.value) handleAssign(e.target.value) }}
+                      value={ticket.assigned_to_id || ''}
+                      disabled={assigning}
+                      className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none disabled:opacity-60"
+                    >
+                      <option value="">{ticket.assigned_to_id ? 'Change Assignment' : 'Select Technician…'}</option>
+                      {technicians.map(tech => (
+                        <option key={tech.id} value={tech.id}>{tech.first_name} {tech.last_name}</option>
+                      ))}
+                    </select>
+                    <UserPlus className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Update Status</label>
+                <div className="flex flex-wrap gap-2">
+                  {visibleNextStatuses.length > 0 ? visibleNextStatuses.map(ns => (
+                    <button
+                      key={ns}
+                      onClick={() => handleStatusChange(ns)}
+                      disabled={updatingStatus}
+                      className="flex-1 min-w-[120px] flex items-center justify-center gap-2 px-4 py-3 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      {updatingStatus ? 'Updating…' : `Mark ${ns.replace('_', ' ')}`}
+                    </button>
+                  )) : (
+                    <p className="text-sm font-medium text-muted-foreground px-4 py-3 bg-muted/30 rounded-xl w-full text-center border border-transparent">
+                      No further transitions
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <div className="space-y-3 pt-4 border-t border-border/50">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Update Priority</label>
+                <div className="flex flex-wrap gap-2">
+                  {PRIORITIES.map(p => (
+                    <button
+                      key={p}
+                      onClick={() => handlePriorityChange(p)}
+                      disabled={updatingPriority || p === ticket.priority}
+                      className={cn(
+                        'px-4 py-2 rounded-xl text-sm font-bold transition-all capitalize',
+                        p === ticket.priority
+                          ? 'bg-foreground text-background shadow-md'
+                          : 'bg-muted/50 text-muted-foreground border border-border/50 hover:border-border hover:text-foreground disabled:opacity-60'
+                      )}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Technician Action Banner */}
+        {isTechnician && ticket.assigned_to_id === user.id && ticket.status === 'pending_assignment' && (
+          <div className="bg-amber-500/5 border border-amber-500/30 rounded-3xl p-6 md:p-8 space-y-4">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-amber-500" />
+              <h2 className="text-base font-bold text-foreground">New Assignment — Action Required</h2>
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">
+              You've been assigned this ticket. Accept it to begin work, or reject it so it can be reassigned.
+            </p>
+            {respondError && <p className="text-sm font-semibold text-destructive bg-destructive/10 px-4 py-2 rounded-lg">{respondError}</p>}
+
+            {!showRejectForm ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAcceptAssignment}
+                  disabled={responding}
+                  className="flex items-center gap-2 px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-colors disabled:opacity-60 shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> {responding ? 'Accepting…' : 'Accept Assignment'}
+                </button>
+                <button
+                  onClick={() => setShowRejectForm(true)}
+                  disabled={responding}
+                  className="flex items-center gap-2 px-6 py-3 border border-destructive/30 text-destructive rounded-xl text-sm font-bold hover:bg-destructive/10 transition-colors disabled:opacity-60"
+                >
+                  <X className="w-4 h-4" /> Reject
+                </button>
+              </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-foreground">Edit Ticket</h2>
-                  <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {editError && <p className="text-xs text-destructive">{editError}</p>}
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium">Title</label>
-                  <input
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    maxLength={120}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium">Description</label>
-                  <textarea
-                    value={editDesc}
-                    onChange={e => setEditDesc(e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium">Category</label>
-                    <select
-                      value={editCat}
-                      onChange={e => setEditCat(e.target.value as TicketCategory)}
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    >
-                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium">Priority</label>
-                    <select
-                      value={editPrio}
-                      onChange={e => setEditPrio(e.target.value as TicketPriority)}
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    >
-                      {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 pt-1">
+              <div className="space-y-3 bg-background p-4 rounded-2xl border border-border">
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Optional reason (e.g. out of zone, overloaded)…"
+                  rows={2}
+                  className="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-none"
+                />
+                <div className="flex items-center gap-3 pt-2 border-t border-border/50">
                   <button
-                    onClick={() => setEditing(false)}
-                    className="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent transition-colors"
+                    onClick={handleRejectAssignment}
+                    disabled={responding}
+                    className="px-5 py-2.5 bg-destructive text-white rounded-xl text-sm font-bold hover:bg-destructive/90 transition-colors disabled:opacity-60"
+                  >
+                    {responding ? 'Rejecting…' : 'Confirm Reject'}
+                  </button>
+                  <button
+                    onClick={() => { setShowRejectForm(false); setRejectReason('') }}
+                    className="px-5 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
                   >
                     Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveEdit}
-                    disabled={saving || !editTitle.trim() || !editDesc.trim()}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
-                  >
-                    <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save Changes'}
                   </button>
                 </div>
               </div>
             )}
           </div>
+        )}
 
-          {/* Manage: assign + status (+ priority for admin only).
-              admin/support_agent ONLY. */}
-          {canManage && (
-            <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-              <h2 className="text-sm font-semibold text-foreground">Manage Ticket</h2>
-
-              {manageError && <p className="text-xs text-destructive">{manageError}</p>}
-
-              {/* Assign to technician. Calls POST /interventions, same as
-                  the Ticket Queue page, so it also creates the
-                  intervention/dispatch record. */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Assign to Technician</label>
-                {technicians.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No technicians available.</p>
-                ) : ticket.assigned_to_id ? (
-                  <p className="text-xs text-muted-foreground">
-                    Already assigned to {ticket.assigned_to_name}. Reassignment isn't supported yet —
-                    manage further progress from the Interventions page.
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {technicians.map(tech => (
-                      <button
-                        key={tech.id}
-                        onClick={() => handleAssign(tech.id)}
-                        disabled={assigning}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors border-border hover:border-primary/50 hover:bg-accent disabled:opacity-60"
-                      >
-                        <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                          {getInitials(tech.first_name, tech.last_name)}
-                        </div>
-                        <span className="text-xs text-foreground">{tech.first_name} {tech.last_name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Status progression — created→assigned and resolved→closed
-                  only. assigned→in_progress→resolved now happens via the
-                  technician's intervention, not here. */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Status</label>
-                {visibleNextStatuses.length > 0 ? (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {visibleNextStatuses.map(ns => (
-                      <button
-                        key={ns}
-                        onClick={() => handleStatusChange(ns)}
-                        disabled={updatingStatus}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        {updatingStatus ? 'Updating…' : `Mark as ${ns.replace('_', ' ')}`}
-                      </button>
-                    ))}
-                  </div>
-                ) : ['assigned', 'in_progress'].includes(ticket.status) ? (
-                  <p className="text-xs text-muted-foreground">
-                    In progress on the technician's side — check the{' '}
-                    <Link href="/interventions" className="text-primary hover:underline">Interventions page</Link>{' '}
-                    for live status and their closing report.
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    This ticket is {ticket.status} — no further transitions available.
-                  </p>
-                )}
-              </div>
-
-              {/* Priority selector — admin only. Agents don't get this. */}
-              {isAdmin && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {PRIORITIES.map(p => (
-                      <button
-                        key={p}
-                        onClick={() => handlePriorityChange(p)}
-                        disabled={updatingPriority || p === ticket.priority}
-                        className={cn(
-                          'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize',
-                          p === ticket.priority
-                            ? 'bg-primary/10 border-primary text-primary cursor-default'
-                            : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60'
-                        )}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+        {isAssignedTechnician && ticket.status !== 'pending_assignment' && (
+          <Link
+            href="/interventions"
+            className="group flex flex-col sm:flex-row items-center gap-4 bg-primary text-primary-foreground rounded-3xl p-6 md:p-8 hover:bg-primary/90 transition-all shadow-md"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+              <Wrench className="w-6 h-6 text-white" />
             </div>
-          )}
+            <div className="text-center sm:text-left">
+              <p className="text-lg font-bold">Update your intervention</p>
+              <p className="text-sm font-medium text-white/80 mt-1">
+                Log status (traveling / in progress / completed) and your closing report from the Interventions page.
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 ml-auto hidden sm:block opacity-70 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+          </Link>
+        )}
 
-          {/* Technician's own assigned ticket: no status controls here anymore —
-              point them to the Interventions page where they actually work. */}
-          {isAssignedTechnician && (
-            <Link
-              href="/interventions"
-              className="flex items-center gap-3 bg-card border border-border rounded-xl p-5 hover:border-primary/40 transition-colors"
-            >
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <Wrench className="w-4 h-4 text-primary" />
+        {/* Ratings block */}
+        {ticket.created_by_id === user.id && ['resolved', 'closed'].includes(ticket.status) && ticket.assigned_to_id && (
+          <div className="bg-card border border-border/80 rounded-3xl p-6 md:p-8 space-y-4">
+            <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Star className="w-4 h-4 text-amber-400" />
+              {ticket.employee_rating ? 'Your Rating' : 'Rate the Technician'}
+            </h2>
+
+            {ticket.employee_rating ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <Star
+                      key={n}
+                      className={cn(
+                        'w-6 h-6',
+                        n <= (ticket.employee_rating || 0) ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'
+                      )}
+                    />
+                  ))}
+                </div>
+                {ticket.rating_comment && (
+                  <p className="text-sm text-foreground bg-muted/40 rounded-xl p-4 border border-border/50">
+                    {ticket.rating_comment}
+                  </p>
+                )}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Update your intervention</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Log status (traveling / in progress / completed) and your closing report from the Interventions page.
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground font-medium">
+                  How was your experience with {ticket.assigned_to_name || 'the technician'} on this ticket?
                 </p>
-              </div>
-            </Link>
-          )}
-
-          {/* Rating — employee rates the technician once the ticket is
-              finished. One rating per ticket, enforced server-side too. */}
-          {ticket.created_by_id === user.id && ['resolved', 'closed'].includes(ticket.status) && ticket.assigned_to_id && (
-            <div className="bg-card border border-border rounded-xl p-5 space-y-3">
-              <h2 className="text-sm font-semibold text-foreground">
-                {ticket.employee_rating ? 'Your Rating' : 'Rate the Technician'}
-              </h2>
-
-              {ticket.employee_rating ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map(n => (
+                {ratingError && <p className="text-xs font-semibold text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{ratingError}</p>}
+                
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setRatingValue(n)}
+                      onMouseEnter={() => setRatingHover(n)}
+                      onMouseLeave={() => setRatingHover(0)}
+                      className="p-1 hover:scale-110 transition-transform focus:outline-none"
+                    >
                       <Star
-                        key={n}
                         className={cn(
-                          'w-5 h-5',
-                          n <= (ticket.employee_rating || 0) ? 'fill-amber-400 text-amber-400' : 'text-border'
+                          'w-8 h-8 transition-colors',
+                          n <= (ratingHover || ratingValue) ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30 hover:text-amber-400/50'
                         )}
                       />
-                    ))}
-                  </div>
-                  {ticket.rating_comment && (
-                    <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
-                      {ticket.rating_comment}
-                    </p>
-                  )}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    How was your experience with {ticket.assigned_to_name || 'the technician'} on this ticket?
-                  </p>
-                  {ratingError && <p className="text-xs text-destructive">{ratingError}</p>}
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setRatingValue(n)}
-                        onMouseEnter={() => setRatingHover(n)}
-                        onMouseLeave={() => setRatingHover(0)}
-                        aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
-                      >
-                        <Star
-                          className={cn(
-                            'w-6 h-6 transition-colors',
-                            n <= (ratingHover || ratingValue) ? 'fill-amber-400 text-amber-400' : 'text-border hover:text-amber-400/50'
-                          )}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    value={ratingComment}
-                    onChange={e => setRatingComment(e.target.value)}
-                    placeholder="Optional comment…"
-                    rows={2}
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  />
-                  <button
-                    onClick={handleSubmitRating}
-                    disabled={ratingValue < 1 || submittingRating}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
-                  >
-                    <Star className="w-3.5 h-3.5" />
-                    {submittingRating ? 'Submitting…' : 'Submit Rating'}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+                
+                <textarea
+                  value={ratingComment}
+                  onChange={e => setRatingComment(e.target.value)}
+                  placeholder="Optional feedback..."
+                  rows={3}
+                  className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+                
+                <button
+                  onClick={handleSubmitRating}
+                  disabled={ratingValue < 1 || submittingRating}
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  <Star className="w-4 h-4" />
+                  {submittingRating ? 'Submitting…' : 'Submit Rating'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* Timeline — simple 4-stage progress: Created → Assigned →
-              In Progress → Resolved. Scoped to THIS ticket only (backend
-              filters by entity_id = ticket id). */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <History className="w-4 h-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-foreground">Timeline</h2>
-            </div>
-
-            <div className="p-5">
-              {timelineLoading && <p className="text-sm text-muted-foreground">Loading timeline…</p>}
-              {!timelineLoading && timelineError && <p className="text-sm text-destructive">{timelineError}</p>}
-
-              {!timelineLoading && !timelineError && (
-                <SimpleTimeline entries={timeline} currentStatus={ticket.status} ticket={ticket} />
-              )}
-            </div>
+        {/* Timeline Component */}
+        <div className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-xs">
+          <div className="px-6 md:px-8 py-5 border-b border-border/50 flex items-center gap-2 bg-muted/20">
+            <History className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground">Timeline Progress</h2>
           </div>
 
-          {/* Comments */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-foreground">
-                Activity <span className="text-muted-foreground font-normal">({ticket.comments?.length || 0})</span>
-              </h2>
-            </div>
-
-            <div className="divide-y divide-border">
-              {(!ticket.comments || ticket.comments.length === 0) && (
-                <p className="text-sm text-muted-foreground text-center py-8">No comments yet.</p>
-              )}
-              {ticket.comments?.map(c => (
-                <div key={c.id} className={cn(
-                  'px-5 py-4 flex gap-3',
-                  c.is_internal ? 'bg-amber-500/5 border-l-2 border-amber-500/40' : ''
-                )}>
-                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0 mt-0.5">
-                    {c.user_name ? getInitials(c.user_name.split(' ')[0], c.user_name.split(' ')[1] || '') : '?'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-foreground">{c.user_name || 'Unknown'}</span>
-                      {c.user_role && <span className="text-[10px] text-muted-foreground">{ROLE_LABELS[c.user_role as keyof typeof ROLE_LABELS] || c.user_role}</span>}
-                      {!!c.is_internal && (
-                        <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-1.5 py-0.5">
-                          <Lock className="w-2.5 h-2.5" /> Internal
-                        </span>
-                      )}
-                      <span className="text-[10px] text-muted-foreground ml-auto">{timeAgo(c.created_at)}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{c.content}</p>
-                  </div>
+          <div className="p-6 md:p-8">
+            {timelineLoading && <p className="text-sm font-medium text-muted-foreground text-center py-4">Loading timeline…</p>}
+            {!timelineLoading && timelineError && <p className="text-sm font-medium text-destructive text-center py-4">{timelineError}</p>}
+            {!timelineLoading && !timelineError && (
+              <div className="w-full overflow-x-auto pb-4 scrollbar-hide">
+                <div className="min-w-max px-2">
+                   <SimpleTimeline entries={timeline} currentStatus={ticket.status} ticket={ticket} />
                 </div>
-              ))}
-            </div>
-
-            {canComment && (
-              <form onSubmit={handleSendComment} className="px-5 py-4 border-t border-border space-y-3">
-                <textarea
-                  value={comment}
-                  onChange={e => setComment(e.target.value)}
-                  placeholder="Add a comment…"
-                  rows={3}
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors resize-none"
-                />
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  {['admin','support_agent'].includes(user.role) && (
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={isInternal}
-                        onChange={e => setIsInternal(e.target.checked)}
-                        className="accent-amber-400"
-                      />
-                      Internal note (not visible to employee)
-                    </label>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={!comment.trim() || posting}
-                    className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
-                  >
-                    <Send className="w-3.5 h-3.5" /> {posting ? 'Sending…' : 'Send'}
-                  </button>
-                </div>
-              </form>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Right: details sidebar */}
-        <div className="space-y-4">
-          <DetailCard title="Details">
-            <DetailRow icon={<Clock className="w-3.5 h-3.5" />} label="Created" value={formatDateTime(ticket.created_at)} />
-            <DetailRow icon={<Clock className="w-3.5 h-3.5" />} label="Updated" value={formatDateTime(ticket.updated_at)} />
-            {ticket.resolved_at && (
-              <DetailRow icon={<Clock className="w-3.5 h-3.5" />} label="Resolved" value={formatDateTime(ticket.resolved_at)} />
-            )}
-          </DetailCard>
+        {/* Activity Feed */}
+        <div className="bg-card border border-border/80 rounded-3xl overflow-hidden shadow-xs">
+          <div className="px-6 md:px-8 py-5 border-b border-border/50 flex items-center justify-between bg-muted/20">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-bold text-foreground">Conversation</h2>
+            </div>
+            <span className="text-xs font-bold bg-background text-muted-foreground px-2.5 py-1 rounded-full border border-border/50">
+              {ticket.comments?.length || 0} messages
+            </span>
+          </div>
 
-          <DetailCard title="Requester">
-            {ticket.created_by_name ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                  {getInitials(ticket.created_by_name.split(' ')[0], ticket.created_by_name.split(' ')[1] || '')}
+          <div className="divide-y divide-border/50">
+            {(!ticket.comments || ticket.comments.length === 0) && (
+              <div className="text-center py-12 px-6">
+                <MessageSquare className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm font-medium text-foreground">No activity yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Comments and updates will appear here.</p>
+              </div>
+            )}
+            {ticket.comments?.map(c => (
+              <div key={c.id} className={cn(
+                'px-6 md:px-8 py-6 flex gap-4 transition-colors',
+                c.is_internal ? 'bg-amber-500/5' : 'hover:bg-muted/10'
+              )}>
+                <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                  {c.user_name ? getInitials(c.user_name.split(' ')[0], c.user_name.split(' ')[1] || '') : '?'}
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-foreground">{ticket.created_by_name}</p>
-                  {ticket.created_by_role && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {ROLE_LABELS[ticket.created_by_role as keyof typeof ROLE_LABELS] || ticket.created_by_role}
-                    </p>
-                  )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-foreground">{c.user_name || 'Unknown'}</span>
+                      {c.user_role && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {ROLE_LABELS[c.user_role as keyof typeof ROLE_LABELS] || c.user_role}
+                        </span>
+                      )}
+                      {!!c.is_internal && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded-md px-1.5 py-0.5">
+                          <Lock className="w-3 h-3" /> Internal Note
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{timeAgo(c.created_at)}</span>
+                  </div>
+                  <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{c.content}</p>
                 </div>
               </div>
-            ) : <span className="text-xs text-muted-foreground">Unknown</span>}
-          </DetailCard>
+            ))}
+          </div>
 
-          <DetailCard title="Assigned To">
-            {ticket.assigned_to_name ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-xs font-bold text-green-400 shrink-0">
-                    {getInitials(ticket.assigned_to_name.split(' ')[0], ticket.assigned_to_name.split(' ')[1] || '')}
-                  </div>
-                  <p className="text-xs font-semibold text-foreground">{ticket.assigned_to_name}</p>
+          {canComment && (
+            <div className="p-6 md:p-8 bg-muted/10 border-t border-border/50">
+              <form onSubmit={handleSendComment} className="space-y-4">
+                <textarea
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
+                  placeholder="Leave a comment or update…"
+                  rows={3}
+                  className="w-full bg-background border border-border rounded-2xl px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none shadow-sm"
+                />
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  {['admin','support_agent'].includes(user.role) ? (
+                    <label className="flex items-center gap-2.5 text-sm font-medium text-foreground cursor-pointer select-none">
+                      <div className="relative flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isInternal}
+                          onChange={e => setIsInternal(e.target.checked)}
+                          className="peer sr-only"
+                        />
+                        <div className="w-5 h-5 rounded border border-border peer-checked:bg-amber-500 peer-checked:border-amber-500 transition-colors flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
+                        </div>
+                        <span className="text-muted-foreground peer-checked:text-foreground transition-colors">Internal note only</span>
+                      </div>
+                    </label>
+                  ) : <div />}
+                  
+                  <button
+                    type="submit"
+                    disabled={!comment.trim() || posting}
+                    className="flex items-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-6 py-2.5 rounded-xl hover:bg-primary/90 transition-all disabled:opacity-60 shadow-sm hover:shadow active:scale-95"
+                  >
+                    <Send className="w-4 h-4" /> {posting ? 'Sending…' : 'Send'}
+                  </button>
                 </div>
-                {canManage && techRating && techRating.rating_count > 0 && (
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground pl-11">
-                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                    <span className="font-semibold text-foreground">{techRating.avg_rating}</span>
-                    <span>({techRating.rating_count} rating{techRating.rating_count === 1 ? '' : 's'})</span>
-                  </div>
-                )}
-                {canManage && techRating && techRating.rating_count === 0 && (
-                  <p className="text-xs text-muted-foreground pl-11">No ratings yet</p>
-                )}
-              </div>
-            ) : (
-              <span className="text-xs text-muted-foreground">Unassigned</span>
-            )}
-          </DetailCard>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -930,22 +1009,16 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
   )
 }
 
-// Colored pill per stage — same visual language as the original design's
-// action-type chips.
 const STAGE_BADGE_COLOR: Record<string, string> = {
-  created:     'bg-blue-500/15 text-blue-400',
-  assigned:    'bg-green-500/15 text-green-400',
-  in_progress: 'bg-amber-500/15 text-amber-400',
-  resolved:    'bg-emerald-500/15 text-emerald-500',
+  created:            'bg-blue-500/15 text-blue-400',
+  pending_assignment: 'bg-orange-500/15 text-orange-400',
+  assigned:           'bg-green-500/15 text-green-400',
+  in_progress:        'bg-amber-500/15 text-amber-400',
+  resolved:           'bg-emerald-500/15 text-emerald-500',
 }
 
-// Vertical stagger pattern (px) so consecutive cards zig-zag like the
-// original Jira/Notion-style timeline.
-const STAGE_STAGGER = [0, 56, 0, 56]
+const STAGE_STAGGER = [0, 56, 0, 56, 0]
 
-// Small connected-card horizontal timeline, same look as before, but
-// fixed to only the 4 clean stages (Created / Assigned / In Progress /
-// Resolved) instead of every raw activity_logs action.
 function SimpleTimeline({
   entries, currentStatus, ticket,
 }: {
@@ -956,16 +1029,13 @@ function SimpleTimeline({
   const CARD_WIDTH = 190
   const GAP = 56
 
-  // The `name` shown per stage comes from the ticket record itself where
-  // possible (t.created_by_name / t.assigned_to_name via the reliable
-  // JOIN in getTicket) rather than from the activity_logs row's user_name.
-  // This guarantees the Created/Assigned cards always match the actual
-  // requester/technician even if an activity_logs row is missing or was
-  // written with a stale user_id (e.g. from old seed data).
   const STAGE_NAME_OVERRIDE: Partial<Record<TicketStatus, string | undefined>> = {
-    created:  ticket.created_by_name,
-    assigned: ticket.assigned_to_name,
+    created:            ticket.created_by_name,
+    pending_assignment: ticket.assigned_to_name,
+    assigned:           ticket.assigned_to_name,
   }
+
+  const lastRejection = [...entries].reverse().find(e => e.action === 'REJECT_ASSIGNMENT')
 
   const stageEntries = STAGES.map(stage => {
     const match = entries.find(e => stage.actions.includes(e.action))
@@ -987,7 +1057,6 @@ function SimpleTimeline({
             height: Math.max(...STAGE_STAGGER) + 130,
           }}
         >
-          {/* Connectors drawn first so cards sit visually on top */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
             {stageEntries.slice(0, -1).map((_, i) => {
               const x1 = i * (CARD_WIDTH + GAP) + CARD_WIDTH
@@ -1055,6 +1124,14 @@ function SimpleTimeline({
 
       {currentStatus === 'cancelled' && (
         <p className="text-xs text-destructive">This ticket was cancelled before it progressed further.</p>
+      )}
+
+      {currentStatus === 'created' && lastRejection && (
+        <p className="text-xs text-orange-400">
+          Previous assignment was declined by {lastRejection.user_name}
+          {lastRejection.details ? ` — ${lastRejection.details.replace(/^Technician declined:?\s*/i, '')}` : ''}.
+          Ready to reassign.
+        </p>
       )}
     </div>
   )

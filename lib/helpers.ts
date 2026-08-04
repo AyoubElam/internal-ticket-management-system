@@ -1,21 +1,27 @@
 import type { TicketStatus, TicketCategory, TicketPriority, InterventionStatus, Role } from './types'
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
-  created:     'Created',
-  assigned:    'Assigned',
-  in_progress: 'In Progress',
-  resolved:    'Resolved',
-  closed:      'Closed',
-  cancelled:   'Cancelled',
+  created:            'Created',
+  pending_assignment: 'Pending Acceptance',
+  assigned:            'Assigned',
+  in_progress:         'In Progress',
+  resolved:            'Resolved',
+  closed:              'Closed',
+  cancelled:           'Cancelled',
 }
 
 export const STATUS_COLORS: Record<TicketStatus, string> = {
-  created:     'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  assigned:    'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  in_progress: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  resolved:    'bg-green-500/20 text-green-400 border-green-500/30',
-  closed:      'bg-slate-600/20 text-slate-500 border-slate-600/30',
-  cancelled:   'Cancelled',
+  created:             'bg-slate-100 text-slate-700 border-slate-200',
+  pending_assignment:  'bg-orange-100 text-orange-700 border-orange-200',
+  assigned:            'bg-blue-100 text-blue-700 border-blue-200',
+  in_progress:         'bg-amber-100 text-amber-700 border-amber-200',
+  resolved:            'bg-emerald-100 text-emerald-700 border-emerald-200',
+  closed:              'bg-slate-200 text-slate-600 border-slate-300',
+  // BUG FIX: this was the literal string 'Cancelled' instead of color
+  // classes — StatusBadge would've rendered the word "Cancelled" as a
+  // broken className on any cancelled ticket. Not something I introduced,
+  // just noticed while wiring up the new status.
+  cancelled:            'bg-rose-100 text-rose-700 border-rose-200',
 }
 
 export const PRIORITY_LABELS: Record<TicketPriority, string> = {
@@ -26,10 +32,10 @@ export const PRIORITY_LABELS: Record<TicketPriority, string> = {
 }
 
 export const PRIORITY_COLORS: Record<TicketPriority, string> = {
-  low:      'bg-green-500/20 text-green-400 border-green-500/30',
-  medium:   'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  high:     'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  critical: 'bg-red-500/20 text-red-400 border-red-500/30',
+  low:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+  medium:   'bg-amber-100 text-amber-700 border-amber-200',
+  high:     'bg-orange-100 text-orange-700 border-orange-200',
+  critical: 'bg-rose-100 text-rose-700 border-rose-200',
 }
 
 export const CATEGORY_LABELS: Record<TicketCategory, string> = {
@@ -40,10 +46,10 @@ export const CATEGORY_LABELS: Record<TicketCategory, string> = {
 }
 
 export const CATEGORY_ICONS: Record<TicketCategory, string> = {
-  network_support:    'wifi',
-  field_intervention: 'wrench',
+  network_support:    'router',
+  field_intervention: 'hammer',
   equipment_request:  'package',
-  system_access:      'lock',
+  system_access:      'key',
 }
 
 export const INTERVENTION_STATUS_LABELS: Record<InterventionStatus, string> = {
@@ -53,9 +59,9 @@ export const INTERVENTION_STATUS_LABELS: Record<InterventionStatus, string> = {
 }
 
 export const INTERVENTION_STATUS_COLORS: Record<InterventionStatus, string> = {
-  traveling:   'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  in_progress: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  completed:   'bg-green-500/20 text-green-400 border-green-500/30',
+  traveling:   'bg-blue-100 text-blue-700 border-blue-200',
+  in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
+  completed:   'bg-emerald-100 text-emerald-700 border-emerald-200',
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -66,10 +72,10 @@ export const ROLE_LABELS: Record<Role, string> = {
 }
 
 export const ROLE_COLORS: Record<Role, string> = {
-  admin:         'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  support_agent: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  technician:    'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  employee:      'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  admin:         'bg-purple-100 text-purple-700 border-purple-200',
+  support_agent: 'bg-blue-100 text-blue-700 border-blue-200',
+  technician:    'bg-amber-100 text-amber-700 border-amber-200',
+  employee:      'bg-slate-100 text-slate-700 border-slate-200',
 }
 
 export function formatDateTime(iso: string): string {

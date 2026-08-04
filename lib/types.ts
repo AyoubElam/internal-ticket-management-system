@@ -1,6 +1,6 @@
 export type Role = 'admin' | 'support_agent' | 'technician' | 'employee'
 
-export type TicketStatus = 'created' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'cancelled'
+export type TicketStatus = 'created' | 'pending_assignment' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'cancelled'
 export type TicketCategory = 'network_support' | 'field_intervention' | 'equipment_request' | 'system_access'
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical'
 export type InterventionStatus = 'traveling' | 'in_progress' | 'completed'

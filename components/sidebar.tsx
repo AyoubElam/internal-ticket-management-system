@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Ticket, Users, BarChart3,
-  Wrench, Bell, LogOut, Wifi, ChevronRight, X, Star
+  Compass, Ticket, Users, Radar,
+  Zap, RadioReceiver, LogOut, Radio, ChevronRight, X, Award
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { ROLE_LABELS } from '@/lib/helpers'
@@ -24,7 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href:  '/dashboard',
     label: 'Dashboard',
-    icon:  <LayoutDashboard className="w-4 h-4" />,
+    icon:  <Compass className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician', 'employee'],
   },
   {
@@ -36,19 +36,19 @@ const NAV_ITEMS: NavItem[] = [
   {
     href:  '/interventions',
     label: 'Interventions',
-    icon:  <Wrench className="w-4 h-4" />,
+    icon:  <Zap className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician'],
   },
   {
     href:  '/analytics',
     label: 'Analytics',
-    icon:  <BarChart3 className="w-4 h-4" />,
+    icon:  <Radar className="w-4 h-4" />,
     roles: ['admin', 'support_agent'],
   },
   {
     href:  '/ratings',
     label: 'Ratings',
-    icon:  <Star className="w-4 h-4" />,
+    icon:  <Award className="w-4 h-4" />,
     roles: ['admin', 'support_agent'],
   },
   {
@@ -60,7 +60,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href:  '/notifications',
     label: 'Notifications',
-    icon:  <Bell className="w-4 h-4" />,
+    icon:  <RadioReceiver className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician', 'employee'],
   },
 ]
@@ -92,17 +92,17 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col border-r border-sidebar-border',
+          'fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col border-r border-border/40',
           'transition-transform duration-300',
-          'lg:relative lg:translate-x-0 lg:z-auto',
+          'lg:relative lg:translate-x-0 lg:z-auto lg:rounded-2xl lg:shadow-sm lg:border lg:border-border/40',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border shrink-0">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <Wifi className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-md">
+              <Radio className="w-4 h-4 text-primary-foreground" />
             </div>
             <div className="min-w-0">
               <p className="text-sidebar-foreground font-bold text-sm leading-none">WIFI Maroc</p>
@@ -129,9 +129,9 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
                 href={item.href}
                 onClick={onClose}
                 className={cn(
-                  'flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group',
+                  'flex items-center justify-between gap-3 px-4 py-2.5 rounded-full text-sm font-medium transition-all group',
                   isActive
-                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    ? 'bg-primary text-primary-foreground shadow-md font-semibold'
                     : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 )}
               >

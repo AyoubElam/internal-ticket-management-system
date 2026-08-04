@@ -54,11 +54,20 @@ export async function listInterventions(req: AuthRequest, res: Response, next: N
 
 /* ── POST /interventions ── */
 /* This is the ONLY place a technician gets assigned to a ticket.
-   Ticket detail page's old direct PATCH assigned_to_id must not be used anymore. */
+   Ticket detail page's old direct PATCH assigned_to_id must not be used anymore.
+
+   CHANGED: this no longer creates the interventions row or fully assigns
+   the ticket immediately. It puts the ticket into 'pending_assignment'
+   and waits for the technician to accept/reject (see acceptAssignment /
+   rejectAssignment below). The interventions row — the thing that
+   actually tracks traveling/in_progress/completed — only gets created
+   once the technician accepts, since there's no work to track before
+   that. This means NO schema change was needed on `interventions` at
+   all; only `tickets.status` gained the 'pending_assignment' value. */
 export async function createIntervention(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { ticket_id, technician_id, notes } = req.body as {
-      ticket_id: number; technician_id: number; notes?: string
+    const { ticket_id, technician_id } = req.body as {
+      ticket_id: number; technician_id: number
     }
 
     if (!ticket_id || !technician_id) {
@@ -67,7 +76,7 @@ export async function createIntervention(req: AuthRequest, res: Response, next: 
     }
 
     // Ticket must exist and currently be unassigned — prevents double
-    // assignment (two interventions rows / a silently overwritten technician).
+    // assignment / racing a still-pending assignment.
     const [ticketRows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT id, title, status, assigned_to_id, created_by_id FROM tickets WHERE id = ?`,
       [ticket_id]
@@ -75,52 +84,199 @@ export async function createIntervention(req: AuthRequest, res: Response, next: 
     const ticket = ticketRows[0]
     if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
     if (ticket.assigned_to_id || ticket.status !== 'created') {
-      res.status(400).json({ error: 'This ticket is already assigned.' })
+      res.status(400).json({
+        error: ticket.status === 'pending_assignment'
+          ? 'This ticket already has a pending assignment awaiting the technician\'s response.'
+          : 'This ticket is already assigned.',
+      })
       return
     }
 
     // technician_id must actually be an active technician.
     const [techRows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT id FROM users WHERE id = ? AND role = 'technician' AND is_active = 1`,
+      `SELECT id, first_name, last_name FROM users WHERE id = ? AND role = 'technician' AND is_active = 1`,
       [technician_id]
     )
-    if (!techRows[0]) {
+    const tech = techRows[0]
+    if (!tech) {
       res.status(400).json({ error: 'Selected user is not an active technician.' })
       return
     }
 
     await pool.query(
-      `UPDATE tickets SET assigned_to_id = ?, status = 'assigned', updated_at = NOW()
+      `UPDATE tickets SET assigned_to_id = ?, status = 'pending_assignment', updated_at = NOW()
        WHERE id = ?`,
       [technician_id, ticket_id]
     )
 
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'ASSIGN_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, ticket_id, `Assigned to ${tech.first_name} ${tech.last_name}, awaiting response`]
+    )
+
+    // Only the technician is notified now — the employee gets notified
+    // once it's actually accepted (see acceptAssignment), so they aren't
+    // told "assigned" for something that might get rejected a minute later.
+    await notifyUsers(
+      [technician_id],
+      `You've been assigned ticket #${ticket_id}: ${ticket.title}. Please accept or reject it.`
+    )
+
+    res.status(201).json({ message: 'Technician assigned — awaiting their response.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /interventions/assignments/:ticketId/accept ──
+   Technician accepts a pending assignment. This is where the actual
+   interventions row gets created (status='traveling'), and the ticket
+   moves pending_assignment → assigned. */
+export async function acceptAssignment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { ticketId } = req.params
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, title, status, assigned_to_id, created_by_id FROM tickets WHERE id = ?`,
+      [ticketId]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    if (ticket.assigned_to_id !== req.user!.userId) {
+      res.status(403).json({ error: 'This assignment is not yours to respond to.' })
+      return
+    }
+    if (ticket.status !== 'pending_assignment') {
+      res.status(400).json({ error: 'This ticket has no pending assignment to respond to.' })
+      return
+    }
+
     const [result] = await pool.query<mysql.ResultSetHeader>(
       `INSERT INTO interventions (ticket_id, technician_id, status, notes)
-       VALUES (?, ?, 'traveling', ?)`,
-      [ticket_id, technician_id, notes ?? null]
+       VALUES (?, ?, 'traveling', NULL)`,
+      [ticketId, req.user!.userId]
+    )
+
+    await pool.query(
+      `UPDATE tickets SET status = 'assigned', updated_at = NOW() WHERE id = ?`,
+      [ticketId]
     )
 
     await pool.query(
       `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
-       VALUES (?, 'CREATE_INTERVENTION', 'intervention', ?, ?)`,
-      [req.user!.userId, result.insertId, `Intervention created for ticket #${ticket_id}`]
+       VALUES (?, 'ACCEPT_ASSIGNMENT', 'ticket', ?, ?)`,
+      [req.user!.userId, ticketId, 'Technician accepted the assignment']
     )
 
-    // Notify the employee their ticket moved, and the technician they've
-    // got a new job. This used to happen inside tickets.controller's
-    // updateTicket when assigning via PATCH — that path is gone now, so
-    // it has to live here instead.
-    await notifyUsers(
-      [ticket.created_by_id],
-      `Your ticket #${ticket_id} has been assigned to a technician.`
+    await notifyUsers([ticket.created_by_id], `Your ticket #${ticketId} has been assigned to a technician.`)
+
+    res.status(201).json({ id: result.insertId, message: 'Assignment accepted.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /interventions/assignments/:ticketId/reject ──
+   Technician declines. Ticket bounces back to 'created', unassigned, so
+   an admin/agent can pick someone else. No interventions row was ever
+   created for a rejected assignment (there's nothing to track). */
+export async function rejectAssignment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { ticketId } = req.params
+    const { reason } = req.body as { reason?: string }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, assigned_to_id FROM tickets WHERE id = ?`,
+      [ticketId]
     )
-    await notifyUsers(
-      [technician_id],
-      `You've been assigned to ticket #${ticket_id}: ${ticket.title}`
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    if (ticket.assigned_to_id !== req.user!.userId) {
+      res.status(403).json({ error: 'This assignment is not yours to respond to.' })
+      return
+    }
+    if (ticket.status !== 'pending_assignment') {
+      res.status(400).json({ error: 'This ticket has no pending assignment to respond to.' })
+      return
+    }
+
+    await pool.query(
+      `UPDATE tickets SET status = 'created', assigned_to_id = NULL, updated_at = NOW() WHERE id = ?`,
+      [ticketId]
     )
 
-    res.status(201).json({ id: result.insertId, message: 'Intervention created.' })
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'REJECT_ASSIGNMENT', 'ticket', ?, ?)`,
+      [req.user!.userId, ticketId, `Technician declined${reason?.trim() ? `: ${reason.trim()}` : ''}`]
+    )
+
+    const staffIds = await getStaffIds()
+    await notifyUsers(staffIds, `Ticket #${ticketId} assignment was declined — needs reassignment.`)
+
+    res.json({ message: 'Assignment rejected. Ticket is available for reassignment.' })
+  } catch (err) { next(err) }
+}
+
+/* ── POST /interventions/bulk-assign ──
+   Admin/agent assigns ONE technician to MULTIPLE tickets at once, from
+   the queue's bulk toolbar. Same pending_assignment flow, just looped
+   with per-ticket error collection so one bad ticket doesn't abort the
+   whole batch. */
+export async function bulkAssignIntervention(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { ticket_ids, technician_id } = req.body as { ticket_ids: number[]; technician_id: number }
+
+    if (!Array.isArray(ticket_ids) || ticket_ids.length === 0 || !technician_id) {
+      res.status(400).json({ error: 'ticket_ids (non-empty array) and technician_id are required.' })
+      return
+    }
+    if (ticket_ids.length > 50) {
+      res.status(400).json({ error: 'Cannot bulk-assign more than 50 tickets at once.' })
+      return
+    }
+
+    const [techRows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, first_name, last_name FROM users WHERE id = ? AND role = 'technician' AND is_active = 1`,
+      [technician_id]
+    )
+    const tech = techRows[0]
+    if (!tech) { res.status(400).json({ error: 'Selected user is not an active technician.' }); return }
+
+    const [tickets] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, assigned_to_id, title FROM tickets WHERE id IN (?)`,
+      [ticket_ids]
+    )
+
+    const results: { id: number; ok: boolean; error?: string }[] = []
+    const techName = `${tech.first_name} ${tech.last_name}`
+
+    for (const ticket of tickets) {
+      if (ticket.assigned_to_id || ticket.status !== 'created') {
+        results.push({ id: ticket.id, ok: false, error: `Ticket is "${ticket.status}", not assignable.` })
+        continue
+      }
+
+      await pool.query(
+        `UPDATE tickets SET assigned_to_id = ?, status = 'pending_assignment', updated_at = NOW() WHERE id = ?`,
+        [technician_id, ticket.id]
+      )
+      await pool.query(
+        `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'ASSIGN_TICKET', 'ticket', ?, ?)`,
+        [req.user!.userId, ticket.id, `Assigned to ${techName}, awaiting response (bulk action)`]
+      )
+      results.push({ id: ticket.id, ok: true })
+    }
+
+    const notFoundIds = ticket_ids.filter(id => !tickets.some(t => t.id === id))
+    for (const id of notFoundIds) results.push({ id, ok: false, error: 'Not found.' })
+
+    const succeeded = results.filter(r => r.ok).length
+    if (succeeded > 0) {
+      await notifyUsers([technician_id], `You've been assigned ${succeeded} ticket(s). Please accept or reject each.`)
+    }
+
+    res.json({ message: `${succeeded}/${ticket_ids.length} ticket(s) assigned to ${techName}.`, results })
   } catch (err) { next(err) }
 }
 
