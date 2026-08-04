@@ -41,8 +41,10 @@ type Ticket = {
   resolved_at?: string
   created_by_id: number
   created_by_name?: string
+  created_by_role?: string
   assigned_to_id?: number
   assigned_to_name?: string
+  assigned_to_role?: string
   employee_rating?: number | null
   rating_comment?: string | null
   comments: Comment[]
@@ -772,7 +774,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
               {!timelineLoading && timelineError && <p className="text-sm text-destructive">{timelineError}</p>}
 
               {!timelineLoading && !timelineError && (
-                <SimpleTimeline entries={timeline} currentStatus={ticket.status} />
+                <SimpleTimeline entries={timeline} currentStatus={ticket.status} ticket={ticket} />
               )}
             </div>
           </div>
@@ -865,7 +867,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
                   {getInitials(ticket.created_by_name.split(' ')[0], ticket.created_by_name.split(' ')[1] || '')}
                 </div>
-                <p className="text-xs font-semibold text-foreground">{ticket.created_by_name}</p>
+                <div>
+                  <p className="text-xs font-semibold text-foreground">{ticket.created_by_name}</p>
+                  {ticket.created_by_role && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {ROLE_LABELS[ticket.created_by_role as keyof typeof ROLE_LABELS] || ticket.created_by_role}
+                    </p>
+                  )}
+                </div>
               </div>
             ) : <span className="text-xs text-muted-foreground">Unknown</span>}
           </DetailCard>
@@ -937,13 +946,30 @@ const STAGE_STAGGER = [0, 56, 0, 56]
 // Small connected-card horizontal timeline, same look as before, but
 // fixed to only the 4 clean stages (Created / Assigned / In Progress /
 // Resolved) instead of every raw activity_logs action.
-function SimpleTimeline({ entries, currentStatus }: { entries: TimelineEntry[]; currentStatus: TicketStatus }) {
+function SimpleTimeline({
+  entries, currentStatus, ticket,
+}: {
+  entries: TimelineEntry[]
+  currentStatus: TicketStatus
+  ticket: Ticket
+}) {
   const CARD_WIDTH = 190
   const GAP = 56
 
+  // The `name` shown per stage comes from the ticket record itself where
+  // possible (t.created_by_name / t.assigned_to_name via the reliable
+  // JOIN in getTicket) rather than from the activity_logs row's user_name.
+  // This guarantees the Created/Assigned cards always match the actual
+  // requester/technician even if an activity_logs row is missing or was
+  // written with a stale user_id (e.g. from old seed data).
+  const STAGE_NAME_OVERRIDE: Partial<Record<TicketStatus, string | undefined>> = {
+    created:  ticket.created_by_name,
+    assigned: ticket.assigned_to_name,
+  }
+
   const stageEntries = STAGES.map(stage => {
     const match = entries.find(e => stage.actions.includes(e.action))
-    return { ...stage, entry: match }
+    return { ...stage, entry: match, displayName: STAGE_NAME_OVERRIDE[stage.key] ?? match?.user_name }
   })
 
   const effectiveStatus = currentStatus === 'closed' ? 'resolved' : currentStatus
@@ -1018,7 +1044,7 @@ function SimpleTimeline({ entries, currentStatus }: { entries: TimelineEntry[]; 
                 )}>
                   <p className="text-xs font-semibold text-foreground truncate">{stage.label}</p>
                   <span className={cn('inline-block text-[10px] font-medium px-2 py-0.5 rounded-full', badgeColor)}>
-                    {stage.entry ? stage.entry.user_name : done ? 'Reached' : 'Pending'}
+                    {stage.displayName ? stage.displayName : done ? 'Reached' : 'Pending'}
                   </span>
                 </div>
               </div>

@@ -110,7 +110,9 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT t.*,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
+         cb.role AS created_by_role,
          CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
+         ab.role AS assigned_to_role,
          r.rating  AS employee_rating,
          r.comment AS rating_comment
        FROM tickets t
