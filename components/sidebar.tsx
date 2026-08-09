@@ -49,7 +49,7 @@ const NAV_ITEMS: NavItem[] = [
     href:  '/ratings',
     label: 'Ratings',
     icon:  <Award className="w-4 h-4" />,
-    roles: ['admin', 'support_agent'],
+    roles: ['admin', 'support_agent', 'technician'],
   },
   {
     href:  '/users',

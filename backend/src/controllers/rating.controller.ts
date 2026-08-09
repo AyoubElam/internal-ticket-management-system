@@ -119,11 +119,19 @@ export async function getTechnicianRating(req: AuthRequest, res: Response, next:
       [technicianId]
     )
 
+    // PRIVACY: a technician viewing their own ratings never sees who left
+    // them — only admin/agent get employee_name in the response. This
+    // prevents a technician from tracking down and confronting whoever
+    // gave a low rating (per the "hide identity from tech" requirement).
+    const sanitizedRecent = role === 'technician'
+      ? recent.map(({ employee_name, ...rest }) => rest)
+      : recent
+
     res.json({
       technician_id: technicianId,
       rating_count: summary.rating_count,
       avg_rating: summary.avg_rating,
-      recent,
+      recent: sanitizedRecent,
     })
   } catch (err) { next(err) }
 }
