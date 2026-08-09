@@ -7,6 +7,7 @@ export type TicketPriority  = 'low' | 'medium' | 'high' | 'critical'
 export type InterventionStatus = 'traveling' | 'in_progress' | 'completed'
 
 export interface JwtPayload {
+  id: any
   userId: number
   role:   Role
   email:  string

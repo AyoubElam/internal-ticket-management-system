@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Compass, Ticket, Users, Radar,
-  Zap, RadioReceiver, LogOut, Radio, ChevronRight, X, Award
+  Zap, RadioReceiver, LogOut, Radio, ChevronRight, X, Award, UserCircle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { ROLE_LABELS } from '@/lib/helpers'
@@ -61,6 +61,12 @@ const NAV_ITEMS: NavItem[] = [
     href:  '/notifications',
     label: 'Notifications',
     icon:  <RadioReceiver className="w-4 h-4" />,
+    roles: ['admin', 'support_agent', 'technician', 'employee'],
+  },
+  {
+    href:  '/profile',
+    label: 'Profile',
+    icon:  <UserCircle className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician', 'employee'],
   },
 ]
@@ -157,7 +163,11 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
 
         {/* User footer */}
         <div className="px-3 py-3 border-t border-sidebar-border shrink-0">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-sidebar-accent/50">
+          <Link
+            href="/profile"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors"
+          >
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-xs font-bold text-primary-foreground shrink-0">
               {getInitials(user.firstName, user.lastName)}
             </div>
@@ -170,14 +180,14 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
               </p>
             </div>
             <button
-              onClick={logout}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); logout() }}
               className="text-sidebar-foreground/40 hover:text-red-400 transition-colors shrink-0"
               title="Sign out"
               aria-label="Sign out"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
-          </div>
+          </Link>
         </div>
       </aside>
     </>

@@ -66,7 +66,7 @@ export async function createUser(req: AuthRequest, res: Response, next: NextFunc
   } catch (err) { next(err) }
 }
 
-/* ── PATCH /users/:id ── */
+/* ── PATCH /users/:id ── (admin only: role, active status, or another user's name) */
 export async function updateUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params
@@ -87,5 +87,74 @@ export async function updateUser(req: AuthRequest, res: Response, next: NextFunc
 
     await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params)
     res.json({ message: 'User updated.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /users/me ── (NEW: any authenticated user updates their own name)
+   Deliberately does NOT accept role or is_active — those stay admin-only
+   via updateUser above. A regular employee/technician/agent hitting this
+   route can never promote themselves or reactivate their own account. */
+export async function updateMe(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.user!.userId
+    const { first_name, last_name } = req.body as { first_name?: string; last_name?: string }
+
+    const fields: string[] = []
+    const params: unknown[] = []
+
+    if (first_name !== undefined) {
+      if (!first_name.trim()) { res.status(400).json({ error: 'First name cannot be empty.' }); return }
+      fields.push('first_name = ?'); params.push(first_name.trim())
+    }
+    if (last_name !== undefined) {
+      if (!last_name.trim()) { res.status(400).json({ error: 'Last name cannot be empty.' }); return }
+      fields.push('last_name = ?'); params.push(last_name.trim())
+    }
+
+    if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
+    params.push(userId)
+
+    await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params)
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, email, first_name, last_name, role, is_active, created_at
+       FROM users WHERE id = ?`,
+      [userId]
+    )
+    res.json(rows[0])
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /users/me/password ── (NEW: any authenticated user changes their own password) */
+export async function changeMyPassword(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.user!.userId
+    const { current_password, new_password } = req.body as {
+      current_password?: string; new_password?: string
+    }
+
+    if (!current_password || !new_password) {
+      res.status(400).json({ error: 'Current and new password are required.' }); return
+    }
+    if (new_password.length < 8) {
+      res.status(400).json({ error: 'New password must be at least 8 characters.' }); return
+    }
+    if (current_password === new_password) {
+      res.status(400).json({ error: 'New password must be different from the current password.' }); return
+    }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      'SELECT password_hash FROM users WHERE id = ?',
+      [userId]
+    )
+    if (!rows[0]) { res.status(404).json({ error: 'User not found.' }); return }
+
+    const valid = await bcrypt.compare(current_password, rows[0].password_hash)
+    if (!valid) { res.status(401).json({ error: 'Current password is incorrect.' }); return }
+
+    const hash = await bcrypt.hash(new_password, 12)
+    await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, userId])
+
+    res.json({ message: 'Password updated successfully.' })
   } catch (err) { next(err) }
 }

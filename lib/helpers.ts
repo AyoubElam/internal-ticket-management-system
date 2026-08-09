@@ -17,10 +17,6 @@ export const STATUS_COLORS: Record<TicketStatus, string> = {
   in_progress:         'bg-amber-100 text-amber-700 border-amber-200',
   resolved:            'bg-emerald-100 text-emerald-700 border-emerald-200',
   closed:              'bg-slate-200 text-slate-600 border-slate-300',
-  // BUG FIX: this was the literal string 'Cancelled' instead of color
-  // classes — StatusBadge would've rendered the word "Cancelled" as a
-  // broken className on any cancelled ticket. Not something I introduced,
-  // just noticed while wiring up the new status.
   cancelled:            'bg-rose-100 text-rose-700 border-rose-200',
 }
 
@@ -91,15 +87,18 @@ export function formatDateShort(iso: string): string {
   })
 }
 
+// CHANGED: this used to return relative time ("5m ago", "2h ago",
+// "3d ago"). Every page in the app (ticket detail conversation feed,
+// timeline entries, interventions list, comments, etc.) calls
+// `timeAgo(...)` to stamp events, so instead of touching every call
+// site, this function keeps its name/signature but now returns the
+// exact date + time. Nothing else needs to change anywhere else in
+// the project — every `timeAgo(x)` call now just shows the real date.
 export function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 export function getInitials(firstName: string, lastName: string): string {

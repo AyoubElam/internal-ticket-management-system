@@ -8,6 +8,7 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
+  updateUser: (patch: Partial<AuthUser>) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -74,8 +75,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
   }, [])
 
+  // NEW: patches the in-memory + localStorage user without a full
+  // re-login. Used after a successful PATCH /users/me so the sidebar,
+  // header, and profile page all reflect the new name immediately.
+  const updateUser = useCallback((patch: Partial<AuthUser>) => {
+    setUser(prev => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch }
+      if (patch.firstName || patch.lastName) {
+        next.avatarInitials = `${next.firstName[0]}${next.lastName[0]}`
+      }
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(next))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

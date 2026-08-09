@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { TechnicianSelect } from '@/components/technician-select'
 import { formatDateTime, timeAgo, getInitials, ROLE_LABELS } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -111,6 +113,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [editError, setEditError] = useState('')
 
   const [cancelling, setCancelling] = useState(false)
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
 
   const [responding, setResponding]       = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
@@ -399,13 +402,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  // FIXED: previously gated on `ticket.active_intervention_id`, a field
-  // that never existed in the API response (getTicket doesn't return it),
-  // so `if (!ticket?.active_intervention_id) return` always fired first
-  // and the buttons did nothing when clicked. The URL was also wrong —
-  // the real interventions.routes.ts keys this by TICKET id (no
-  // interventions row exists yet at this point — see
-  // interventions.controller.ts's createIntervention).
   async function handleAcceptAssignment() {
     if (!ticket) return
     setResponding(true)
@@ -427,8 +423,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  // Same fix as accept — uses ticket.id against the real
-  // /interventions/assignments/:ticketId/reject route.
   async function handleRejectAssignment() {
     if (!ticket) return
     setResponding(true)
@@ -453,10 +447,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  // FIXED: no more window.confirm(). Button opens `showCancelDialog`;
+  // the API call fires only after the user confirms in <ConfirmDialog />.
   async function handleCancelTicket() {
     if (!ticket) return
-    if (!confirm('Are you sure you want to cancel this ticket? This cannot be undone.')) return
-
     setCancelling(true)
     try {
       const token = localStorage.getItem('token')
@@ -466,6 +460,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to cancel ticket.')
+      setShowCancelDialog(false)
       fetchTicket()
       fetchTimeline()
     } catch (err: any) {
@@ -507,7 +502,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             )}
             {canCancelTicket && (
               <button
-                onClick={handleCancelTicket}
+                onClick={() => setShowCancelDialog(true)}
                 disabled={cancelling}
                 className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
               >
@@ -657,20 +652,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     Awaiting response from {ticket.assigned_to_name}
                   </p>
                 ) : (
-                  <div className="relative">
-                    <select 
-                      onChange={(e) => { if(e.target.value) handleAssign(e.target.value) }}
-                      value={ticket.assigned_to_id || ''}
-                      disabled={assigning}
-                      className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none disabled:opacity-60"
-                    >
-                      <option value="">{ticket.assigned_to_id ? 'Change Assignment' : 'Select Technician…'}</option>
-                      {technicians.map(tech => (
-                        <option key={tech.id} value={tech.id}>{tech.first_name} {tech.last_name}</option>
-                      ))}
-                    </select>
-                    <UserPlus className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  </div>
+                  <TechnicianSelect
+                    technicians={technicians}
+                    value={ticket.assigned_to_id}
+                    disabled={assigning}
+                    placeholder="Select Technician…"
+                    onSelect={handleAssign}
+                  />
                 )}
               </div>
 
@@ -984,6 +972,18 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showCancelDialog}
+        title="Cancel this ticket?"
+        description="This action cannot be undone. The ticket will be permanently cancelled."
+        confirmLabel="Yes, cancel it"
+        cancelLabel="Keep ticket"
+        variant="danger"
+        loading={cancelling}
+        onConfirm={handleCancelTicket}
+        onCancel={() => setShowCancelDialog(false)}
+      />
     </div>
   )
 }
