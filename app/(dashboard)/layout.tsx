@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { NotificationsProvider, useNotifications } from '@/lib/notifications-context'
 import Sidebar from '@/components/sidebar'
 import Topbar from '@/components/topbar'
+import AnimatedBackground from '@/components/animated-background'
 import { cn } from '@/lib/utils'
 
 const PAGE_TITLES: Record<string, string> = {
@@ -55,7 +56,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   )?.[1] ?? 'SIGDI'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background/50 p-2 md:p-3">
+    <div className="flex h-screen overflow-hidden bg-background p-0 md:p-2 lg:p-4 relative">
+      <AnimatedBackground />
       {/* Desktop Sidebar Container */}
       <div 
         className={cn(
@@ -81,7 +83,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         />
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-card rounded-2xl shadow-sm border border-border/40 relative">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-card/80 backdrop-blur-md md:rounded-2xl shadow-soft relative z-10">
         <Topbar
           onMenuClick={toggleSidebar}
           title={title}

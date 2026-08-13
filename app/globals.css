@@ -47,95 +47,90 @@
   --radius-2xl: calc(var(--radius) * 1.8);
 }
 
-/* ── Light mode (the only mode now — dark block below just mirrors it
-   so nothing breaks if .dark ever gets toggled on again) ── */
+/* ── Minimalist Light Theme ── */
 :root {
   color-scheme: light;
-  --background:         oklch(0.91 0.008 240);   /* Comfortable warm-grey — easy on eyes */
-  --foreground:         oklch(0.18 0.02 240);
-  --card:               oklch(0.965 0.005 240);
-  --card-foreground:    oklch(0.18 0.02 240);
-  --popover:            oklch(0.965 0.005 240);
-  --popover-foreground: oklch(0.18 0.02 240);
-  --primary:            oklch(0.55 0.15 200);   /* Vibrant Ocean Teal */
+  /* 1. Background: Soft Pearl */
+  --background:         oklch(0.99 0.005 270);
+  --foreground:         oklch(0.20 0.02 270);
+  --card:               oklch(1 0 0);
+  --card-foreground:    oklch(0.20 0.02 270);
+  --popover:            oklch(1 0 0);
+  --popover-foreground: oklch(0.20 0.02 270);
+  
+  /* 2. Primary: Royal Blue-Violet */
+  --primary:            oklch(0.50 0.20 270);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary:          oklch(0.93 0.01 240);
-  --secondary-foreground: oklch(0.28 0.02 240);
-  --muted:              oklch(0.93 0.01 240);
-  --muted-foreground:   oklch(0.48 0.02 240);
-  --accent:             oklch(0.91 0.03 200);
-  --accent-foreground:  oklch(0.35 0.15 200);
-  --destructive:        oklch(0.55 0.22 25);
-  --border:             oklch(0.87 0.01 240);
-  --input:              oklch(0.87 0.01 240);
-  --ring:               oklch(0.55 0.15 200);
-  --radius:             0.75rem;
+  
+  /* 3. Secondary/Accent: Sunset Coral */
+  --secondary:          oklch(0.65 0.20 40);
+  --secondary-foreground: oklch(0.99 0 0);
+  
+  --muted:              oklch(0.96 0.01 270);
+  --muted-foreground:   oklch(0.55 0.02 270);
+  
+  --accent:             oklch(0.65 0.20 40);
+  --accent-foreground:  oklch(0.99 0 0);
+  
+  --destructive:        oklch(0.60 0.20 25);
+  
+  --border:             oklch(0.93 0.01 270);
+  --input:              oklch(0.93 0.01 270);
+  --ring:               oklch(0.50 0.20 270);
+  
+  --radius:             1rem;
 
-  --chart-1: oklch(0.55 0.15 200);
-  --chart-2: oklch(0.62 0.17 165);
-  --chart-3: oklch(0.72 0.18 60);
-  --chart-4: oklch(0.65 0.20 335);
-  --chart-5: oklch(0.58 0.20 25);
+  --chart-1: oklch(0.50 0.20 270);
+  --chart-2: oklch(0.65 0.20 40);
+  --chart-3: oklch(0.70 0.12 180);
+  --chart-4: oklch(0.60 0.15 330);
+  --chart-5: oklch(0.80 0.15 100);
 
-  --sidebar:            oklch(0.95 0.007 240);  /* Comfortable warm sidebar */
-  --sidebar-foreground: oklch(0.30 0.02 240);
-  --sidebar-primary:    oklch(0.55 0.15 200);
+  --sidebar:            oklch(1 0 0);
+  --sidebar-foreground: oklch(0.35 0.02 270);
+  --sidebar-primary:    oklch(0.50 0.20 270);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent:     oklch(0.95 0.02 200);
-  --sidebar-accent-foreground: oklch(0.35 0.15 200);
-  --sidebar-border:     oklch(0.92 0.01 240);
-  --sidebar-ring:       oklch(0.55 0.15 200);
+  --sidebar-accent:     oklch(0.96 0.01 270);
+  --sidebar-accent-foreground: oklch(0.20 0.02 270);
+  --sidebar-border:     oklch(0.93 0.01 270);
+  --sidebar-ring:       oklch(0.50 0.20 270);
 
-  /* status colors - making them softer */
-  --status-created:     oklch(0.70 0.05 240);
-  --status-assigned:    oklch(0.65 0.12 200);
-  --status-in-progress: oklch(0.75 0.15 60);
-  --status-resolved:    oklch(0.65 0.15 150);
-  --status-closed:      oklch(0.55 0.02 240);
+  /* status colors - softer, pastel-like tints */
+  --status-created:     oklch(0.85 0.04 270);
+  --status-assigned:    oklch(0.80 0.08 270);
+  --status-in-progress: oklch(0.85 0.12 80);
+  --status-resolved:    oklch(0.80 0.12 150);
+  --status-closed:      oklch(0.85 0.02 270);
 
-  --priority-low:       oklch(0.65 0.15 150);
-  --priority-medium:    oklch(0.75 0.15 60);
-  --priority-high:      oklch(0.68 0.18 40);
-  --priority-critical:  oklch(0.55 0.22 25);
+  --priority-low:       oklch(0.80 0.12 150);
+  --priority-medium:    oklch(0.85 0.12 80);
+  --priority-high:      oklch(0.75 0.15 40);
+  --priority-critical:  oklch(0.65 0.18 25);
 }
 
-/* ── Dark mode kept as a fallback / future toggle — mirrors the same
-   palette family, only used if .dark is ever applied to <html>. ── */
+/* ── Dark mode (optional fallback) ── */
 .dark {
   color-scheme: dark;
-  --background:        oklch(0.14 0.02 265);
-  --foreground:        oklch(0.94 0.008 260);
-  --card:              oklch(0.18 0.02 265);
-  --card-foreground:   oklch(0.94 0.008 260);
-  --popover:           oklch(0.18 0.02 265);
-  --popover-foreground: oklch(0.94 0.008 260);
-  --primary:           oklch(0.66 0.18 275);
-  --primary-foreground: oklch(0.13 0.02 265);
-  --secondary:         oklch(0.22 0.02 265);
-  --secondary-foreground: oklch(0.88 0.008 260);
-  --muted:             oklch(0.22 0.02 265);
-  --muted-foreground:  oklch(0.58 0.012 260);
-  --accent:            oklch(0.27 0.06 275);
-  --accent-foreground: oklch(0.80 0.14 275);
-  --destructive:       oklch(0.65 0.22 25);
+  --background:        oklch(0.12 0.02 270);
+  --foreground:        oklch(0.98 0.01 270);
+  --card:              oklch(0.16 0.02 270);
+  --card-foreground:   oklch(0.98 0.01 270);
+  --popover:           oklch(0.16 0.02 270);
+  --popover-foreground: oklch(0.98 0.01 270);
+  --primary:           oklch(0.65 0.18 270);
+  --primary-foreground: oklch(0.12 0.02 270);
+  --secondary:         oklch(0.65 0.20 40);
+  --secondary-foreground: oklch(0.12 0.02 270);
+  --muted:             oklch(0.20 0.02 270);
+  --muted-foreground:  oklch(0.65 0.02 270);
+  --accent:            oklch(0.65 0.20 40);
+  --accent-foreground: oklch(0.12 0.02 270);
+  --destructive:       oklch(0.65 0.18 25);
   --border:            oklch(1 0 0 / 8%);
   --input:             oklch(1 0 0 / 10%);
-  --ring:              oklch(0.66 0.18 275);
-
-  --chart-1: oklch(0.66 0.18 275);
-  --chart-2: oklch(0.65 0.17 165);
-  --chart-3: oklch(0.75 0.18 60);
-  --chart-4: oklch(0.68 0.19 335);
-  --chart-5: oklch(0.62 0.20 25);
-
-  --sidebar:           oklch(0.16 0.022 265);
-  --sidebar-foreground: oklch(0.88 0.008 260);
-  --sidebar-primary:   oklch(0.66 0.18 275);
-  --sidebar-primary-foreground: oklch(0.13 0.02 265);
-  --sidebar-accent:    oklch(0.24 0.022 265);
-  --sidebar-accent-foreground: oklch(0.88 0.008 260);
+  --ring:              oklch(0.65 0.18 270);
+  --sidebar:           oklch(0.12 0.02 270);
   --sidebar-border:    oklch(1 0 0 / 8%);
-  --sidebar-ring:      oklch(0.66 0.18 275);
 }
 
 @layer base {
@@ -143,7 +138,16 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-sans antialiased selection:bg-primary/20;
+  }
+}
+
+@layer utilities {
+  .shadow-soft {
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 0 3px rgba(0,0,0,0.02);
+  }
+  .shadow-glow {
+    box-shadow: 0 0 20px 0 rgba(var(--primary), 0.15);
   }
 }
 
@@ -157,6 +161,14 @@
 @keyframes fadeSlideDown {
   from { opacity: 0; transform: translateY(-6px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Background animated lines */
+@keyframes drawLine {
+  0% { stroke-dashoffset: 2000; opacity: 0; }
+  10% { opacity: 0.5; }
+  90% { opacity: 0.5; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
 }
 
 /* Confirm dialog animations */

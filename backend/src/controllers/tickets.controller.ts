@@ -468,6 +468,123 @@ export async function cancelTicket(req: AuthRequest, res: Response, next: NextFu
   } catch (err) { next(err) }
 }
 
+/* ── PATCH /tickets/:id/reopen (employee reopens resolved ticket within 24h limit) ── */
+export async function reopenTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+    const { reason } = req.body as { reason?: string }
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, created_by_id, resolved_at FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    if (ticket.created_by_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Only the ticket requester can reopen a resolved ticket.' }); return
+    }
+
+    if (ticket.status !== 'resolved') {
+      res.status(400).json({ error: 'Only tickets in "resolved" status can be reopened.' })
+      return
+    }
+
+    if (!reason || !reason.trim()) {
+      res.status(400).json({ error: 'Please provide a reason for reopening this ticket.' })
+      return
+    }
+
+    // 24-hour limit check from resolved_at timestamp
+    if (ticket.resolved_at) {
+      const resolvedTime = new Date(ticket.resolved_at).getTime()
+      const now = Date.now()
+      const diffHours = (now - resolvedTime) / (1000 * 60 * 60)
+
+      if (diffHours > 24) {
+        res.status(400).json({
+          error: 'This ticket was resolved more than 24 hours ago and can no longer be reopened. Please create a new ticket.'
+        })
+        return
+      }
+    }
+
+    const cleanReason = reason.trim()
+
+    // Reset ticket to created status and unassign technician
+    await pool.query(
+      `UPDATE tickets SET status = 'created', assigned_to_id = NULL, resolved_at = NULL, updated_at = NOW() WHERE id = ?`,
+      [id]
+    )
+
+    // Add automated public comment explaining the reopen reason
+    await pool.query(
+      `INSERT INTO comments (ticket_id, user_id, content, is_internal)
+       VALUES (?, ?, ?, 0)`,
+      [id, req.user!.userId, `🔄 Ticket Reopened by Requester:\n"${cleanReason}"`]
+    )
+
+    // Activity log
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'REOPEN_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, id, `Reopened ticket. Reason: ${cleanReason}`]
+    )
+
+    // Notify staff (agents & admins)
+    const [staff] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id FROM users WHERE role IN ('admin', 'support_agent')`
+    )
+    if (staff.length > 0) {
+      const values = staff.map((u) => [u.id, `Ticket #${id} has been reopened by requester: "${cleanReason.slice(0, 60)}…"`, 0])
+      await pool.query(
+        `INSERT INTO notifications (user_id, message, is_read) VALUES ?`,
+        [values]
+      )
+    }
+
+    res.json({ message: 'Ticket reopened successfully.' })
+  } catch (err) { next(err) }
+}
+
+/* ── PATCH /tickets/:id/close (employee confirms resolution) ── */
+export async function closeTicket(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params
+
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT id, status, created_by_id FROM tickets WHERE id = ?`,
+      [id]
+    )
+    const ticket = rows[0]
+    if (!ticket) { res.status(404).json({ error: 'Ticket not found.' }); return }
+
+    const isStaff = req.user!.role === 'admin' || req.user!.role === 'support_agent'
+    if (ticket.created_by_id !== req.user!.userId && !isStaff) {
+      res.status(403).json({ error: 'You can only close your own tickets.' }); return
+    }
+
+    if (ticket.status !== 'resolved') {
+      res.status(400).json({ error: 'Only resolved tickets can be marked as closed.' })
+      return
+    }
+
+    await pool.query(
+      `UPDATE tickets SET status = 'closed', updated_at = NOW() WHERE id = ?`,
+      [id]
+    )
+
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, 'CLOSE_TICKET', 'ticket', ?, ?)`,
+      [req.user!.userId, id, 'Resolution confirmed by requester (Ticket Closed)']
+    )
+
+    res.json({ message: 'Ticket closed successfully.' })
+  } catch (err) { next(err) }
+}
+
+
 /* ── PATCH /tickets/bulk ──
    Bulk status and/or priority change for admin/support_agent, driven by
    the ticket queue's multi-select toolbar. Each ticket is validated

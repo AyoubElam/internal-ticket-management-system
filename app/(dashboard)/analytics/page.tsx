@@ -5,11 +5,13 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { TrendingUp, Clock, CheckCircle, AlertTriangle, Shield } from 'lucide-react'
+import { TrendingUp, Clock, CheckCircle, AlertTriangle, Shield, Calendar } from 'lucide-react'
 import StatCard from '@/components/stat-card'
 import { STATUS_LABELS, PRIORITY_LABELS, CATEGORY_LABELS } from '@/lib/helpers'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 // Theme-aware — these read your CSS variables at paint time, so charts
 // stay correct if the palette changes (light/dark/anything else) instead
@@ -52,18 +54,26 @@ type KpiStats = {
   ticketsOverTime: { date: string; created: number; resolved: number }[]
 }
 
+type Period = 7 | 30
+
 export default function AnalyticsPage() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [kpi, setKpi] = useState<KpiStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [period, setPeriod] = useState<Period>(7)
 
   useEffect(() => {
     if (!user || !['admin', 'support_agent'].includes(user.role)) return
     const fetchKpi = async () => {
+      setLoading(true)
+      setError('')
       try {
         const token = localStorage.getItem('token')
-        const res = await fetch('http://localhost:4000/api/analytics/kpi', {
+        // Pass the period as a query param; the backend uses it if it supports it,
+        // otherwise the frontend filters ticketsOverTime client-side.
+        const res = await fetch(`http://localhost:4000/api/analytics/kpi?days=${period}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
@@ -76,19 +86,24 @@ export default function AnalyticsPage() {
       }
     }
     fetchKpi()
-  }, [user])
+  }, [user, period])
 
   if (!user || !['admin', 'support_agent'].includes(user.role)) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <Shield className="w-10 h-10 text-muted-foreground" />
-        <p className="text-muted-foreground text-sm">Access restricted to admins and support agents.</p>
+        <p className="text-muted-foreground text-sm">{t('dashboard.access_restricted')}</p>
       </div>
     )
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground py-10 text-center">Loading analytics…</p>
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-medium text-muted-foreground">{t('common.loading')}</p>
+      </div>
+    )
   }
 
   if (error || !kpi) {
@@ -99,6 +114,10 @@ export default function AnalyticsPage() {
       </div>
     )
   }
+
+  // Slice the last N days of data client-side as a fallback
+  // (backend may or may not honour the ?days= param)
+  const filteredOverTime = kpi.ticketsOverTime.slice(-period)
 
   const categoryData = kpi.byCategory.map(c => ({
     name: CATEGORY_LABELS[c.category],
@@ -123,21 +142,53 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header with period switcher */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-xl font-black text-foreground">{t('analytics.title') || 'Analytics'}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {period === 7 ? 'Showing data for the last 7 days' : 'Showing data for the last 30 days'}
+          </p>
+        </div>
+
+        {/* Period Toggle */}
+        <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm border border-border/20 rounded-2xl p-1.5 shadow-soft">
+          <Calendar className="w-4 h-4 text-muted-foreground ml-2 mr-1" />
+          {([7, 30] as Period[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={cn(
+                'px-4 py-2 rounded-xl text-xs font-black transition-all duration-300',
+                period === p
+                  ? 'bg-primary text-primary-foreground shadow-glow'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+              )}
+            >
+              {p === 7 ? 'Last 7 Days' : 'Last 30 Days'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard title="Total Tickets"     value={kpi.totalTickets}       icon={<TrendingUp className="w-4 h-4" />}     color="blue"   subtitle="All time" />
-        <StatCard title="Open Tickets"      value={kpi.openTickets}        icon={<AlertTriangle className="w-4 h-4" />}  color="amber"  subtitle="Unresolved" />
-        <StatCard title="Resolved Today"    value={kpi.resolvedToday}      icon={<CheckCircle className="w-4 h-4" />}    color="green"  subtitle="Last 24h" />
-        <StatCard title="Avg. Resolution"   value={`${kpi.avgResolutionHours}h`} icon={<Clock className="w-4 h-4" />}  color="purple" subtitle="Average time" />
-        <StatCard title="SLA Compliance"    value={`${kpi.slaCompliance}%`} icon={<Shield className="w-4 h-4" />}       color={kpi.slaCompliance >= 80 ? 'green' : 'red'} subtitle="On-time resolution" />
+        <StatCard title={t('analytics.total_tickets')}     value={kpi.totalTickets}       icon={<TrendingUp className="w-4 h-4" />}     color="blue"   subtitle={t('analytics.all_time')} />
+        <StatCard title={t('analytics.open_tickets')}      value={kpi.openTickets}        icon={<AlertTriangle className="w-4 h-4" />}  color="amber"  subtitle={t('analytics.unresolved')} />
+        <StatCard title={t('analytics.resolved_today')}    value={kpi.resolvedToday}      icon={<CheckCircle className="w-4 h-4" />}    color="green"  subtitle={t('analytics.last_24h')} />
+        <StatCard title={t('analytics.avg_resolution')}    value={`${kpi.avgResolutionHours}h`} icon={<Clock className="w-4 h-4" />}  color="purple" subtitle={t('analytics.avg_time')} />
+        <StatCard title={t('analytics.sla_compliance')}    value={`${kpi.slaCompliance}%`} icon={<Shield className="w-4 h-4" />}       color={kpi.slaCompliance >= 80 ? 'green' : 'red'} subtitle={t('analytics.on_time')} />
       </div>
 
       {/* Charts row 1 */}
       <div className="grid lg:grid-cols-2 gap-5">
         {/* Tickets over time */}
-        <ChartCard title="Tickets Over Time" subtitle="Created vs Resolved — last 7 days">
+        <ChartCard
+          title={t('analytics.tickets_over_time')}
+          subtitle={period === 7 ? 'Daily volume over the last 7 days' : 'Daily volume over the last 30 days'}
+        >
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={kpi.ticketsOverTime} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+            <LineChart data={filteredOverTime} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-muted-foreground)' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: 'var(--color-muted-foreground)' }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -153,7 +204,7 @@ export default function AnalyticsPage() {
         </ChartCard>
 
         {/* By category */}
-        <ChartCard title="Tickets by Category" subtitle="Distribution across request types">
+        <ChartCard title={t('analytics.tickets_by_category')} subtitle={t('analytics.category_desc')}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={categoryData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -176,7 +227,7 @@ export default function AnalyticsPage() {
       {/* Charts row 2 */}
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Status pie */}
-        <ChartCard title="By Status" subtitle="Current ticket states">
+        <ChartCard title={t('analytics.by_status')} subtitle={t('analytics.status_desc')}>
           <div className="flex items-center gap-4">
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
@@ -213,7 +264,7 @@ export default function AnalyticsPage() {
         </ChartCard>
 
         {/* Priority pie */}
-        <ChartCard title="By Priority" subtitle="Open ticket urgency">
+        <ChartCard title={t('analytics.by_priority')} subtitle={t('analytics.priority_desc')}>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
@@ -247,15 +298,14 @@ export default function AnalyticsPage() {
           </div>
         </ChartCard>
 
-        {/* SLA card — real per-priority numbers from the backend now,
-            not hardcoded placeholders. */}
-        <ChartCard title="SLA Performance" subtitle="Resolution compliance by priority">
+        {/* SLA card */}
+        <ChartCard title={t('analytics.sla_performance')} subtitle={t('analytics.sla_perf_desc')}>
           <div className="space-y-4 pt-2">
-            <SlaBar label="Overall SLA" value={kpi.slaCompliance} target={90} />
+            <SlaBar label={t('analytics.overall_sla')} value={kpi.slaCompliance} target={90} />
             {slaBars.map(s => (
               <SlaBar
                 key={s.priority}
-                label={`${PRIORITY_LABELS[s.priority]} (${SLA_TARGETS[s.priority].window})`}
+                label={`${PRIORITY_LABELS[s.priority]} (${SLA_TARGETS[s.priority].window.replace('resolution', t('analytics.resolution'))})`}
                 value={s.compliance}
                 target={SLA_TARGETS[s.priority].target}
               />
@@ -269,9 +319,9 @@ export default function AnalyticsPage() {
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+    <div className="bg-card/80 backdrop-blur-sm border border-border/20 rounded-2xl p-6 flex flex-col space-y-4 shadow-soft hover:shadow-glow transition-all duration-300 ease-out">
       <div>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <h3 className="text-sm font-bold text-foreground">{title}</h3>
         <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
       </div>
       {children}

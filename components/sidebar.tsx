@@ -9,6 +9,7 @@ import {
 import { useAuth } from '@/lib/auth-context'
 import { ROLE_LABELS } from '@/lib/helpers'
 import { getInitials } from '@/lib/helpers'
+import { useLanguage } from '@/lib/i18n/language-context'
 import type { Role } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -80,6 +81,7 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps) {
   const pathname = usePathname()
   const { user, logout } = useAuth()
+  const { t } = useLanguage()
 
   if (!user) return null
 
@@ -98,21 +100,21 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col border-r border-border/40',
-          'transition-transform duration-300',
-          'lg:relative lg:translate-x-0 lg:z-auto lg:rounded-2xl lg:shadow-sm lg:border lg:border-border/40',
-          open ? 'translate-x-0' : '-translate-x-full'
+          'fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-sidebar/95 backdrop-blur-md',
+          'transition-all duration-300 ease-out',
+          'lg:relative lg:translate-x-0 lg:z-auto lg:rounded-2xl lg:shadow-soft',
+          open ? 'translate-x-0 shadow-soft' : '-translate-x-full'
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border shrink-0">
-          <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-md">
+        <div className="flex items-center justify-between h-16 px-5 shrink-0">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-glow">
               <Radio className="w-4 h-4 text-primary-foreground" />
             </div>
             <div className="min-w-0">
-              <p className="text-sidebar-foreground font-bold text-sm leading-none">WIFI Maroc</p>
-              <p className="text-sidebar-foreground/50 text-[10px] mt-0.5">SIGDI</p>
+              <p className="text-sidebar-foreground font-bold text-sm tracking-tight leading-none">WIFI Maroc</p>
+              <p className="text-sidebar-foreground/50 text-[10px] mt-0.5 tracking-wider">SIGDI</p>
             </div>
           </Link>
           <button
@@ -135,9 +137,9 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
                 href={item.href}
                 onClick={onClose}
                 className={cn(
-                  'flex items-center justify-between gap-3 px-4 py-2.5 rounded-full text-sm font-medium transition-all group',
+                  'flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ease-out group active:scale-[0.98]',
                   isActive
-                    ? 'bg-primary text-primary-foreground shadow-md font-semibold'
+                    ? 'bg-primary text-primary-foreground shadow-glow font-bold'
                     : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 )}
               >
@@ -148,7 +150,7 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
                   )}>
                     {item.icon}
                   </span>
-                  {item.label}
+                  {t(`sidebar.${item.label.toLowerCase()}`)}
                 </span>
                 {badgeCount > 0 && (
                   <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
@@ -162,7 +164,7 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
         </nav>
 
         {/* User footer */}
-        <div className="px-3 py-3 border-t border-sidebar-border shrink-0">
+        <div className="px-3 py-3 shrink-0">
           <Link
             href="/profile"
             onClick={onClose}

@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Mail, Shield, MapPin, Key, Check, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import { RoleBadge } from '@/components/status-badge'
 import { mockZones, mockTickets, mockInterventions } from '@/lib/mock-data'
 import { formatDateShort, getInitials, ROLE_LABELS } from '@/lib/helpers'
 
 export default function ProfilePage() {
   const { user, updateUser, logout } = useAuth()
+  const { t } = useLanguage()
   const router = useRouter()
 
   // ── Name form state ──
@@ -143,8 +145,8 @@ export default function ProfilePage() {
   return (
     <div className="max-w-3xl space-y-6">
       {/* Profile header card */}
-      <div className="bg-card border border-border rounded-xl p-6 flex items-center gap-6 flex-wrap">
-        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground shrink-0">
+      <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-3xl p-6 flex items-center gap-6 flex-wrap transition-all hover:shadow-glow duration-300">
+        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground shadow-glow shrink-0">
           {getInitials(user.firstName, user.lastName)}
         </div>
         <div className="flex-1 min-w-0 space-y-1">
@@ -164,7 +166,7 @@ export default function ProfilePage() {
                 ? 'bg-green-500/20 text-green-400 border-green-500/30'
                 : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
             }`}>
-              {user.isActive ? 'Active' : 'Inactive'}
+              {user.isActive ? t('profile.active') : t('profile.inactive')}
             </span>
           </div>
         </div>
@@ -173,34 +175,34 @@ export default function ProfilePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {user.role !== 'technician' && (
-          <div className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground">
-              {user.role === 'employee' ? 'Tickets Submitted' : 'Tickets Assigned'}
+          <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-2xl p-5 hover:-translate-y-0.5 transition-all duration-300">
+            <p className="text-xs font-semibold text-muted-foreground">
+              {user.role === 'employee' ? t('profile.tickets_submitted') : t('profile.tickets_assigned')}
             </p>
             <p className="text-2xl font-bold text-foreground mt-1">{myTickets.length}</p>
           </div>
         )}
         {user.role === 'technician' && (
-          <div className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground">Interventions</p>
+          <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-2xl p-5 hover:-translate-y-0.5 transition-all duration-300">
+            <p className="text-xs font-semibold text-muted-foreground">{t('profile.interventions')}</p>
             <p className="text-2xl font-bold text-foreground mt-1">{myInterventions.length}</p>
           </div>
         )}
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground">Resolved</p>
+        <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-2xl p-5 hover:-translate-y-0.5 transition-all duration-300">
+          <p className="text-xs font-semibold text-muted-foreground">{t('profile.resolved')}</p>
           <p className="text-2xl font-bold text-green-400 mt-1">{resolvedTickets.length}</p>
         </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground">Member Since</p>
+        <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-2xl p-5 hover:-translate-y-0.5 transition-all duration-300">
+          <p className="text-xs font-semibold text-muted-foreground">{t('profile.member_since')}</p>
           <p className="text-sm font-bold text-foreground mt-1">{formatDateShort(user.createdAt)}</p>
         </div>
       </div>
 
       {/* Edit form */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <User className="w-4 h-4 text-muted-foreground" /> Account Information
+      <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-3xl overflow-hidden">
+        <div className="px-8 py-5 border-b border-border/20">
+          <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <User className="w-4 h-4 text-primary" /> {t('profile.account_info')}
           </h3>
         </div>
         <form onSubmit={handleSaveProfile} className="p-6 space-y-5">
@@ -212,7 +214,7 @@ export default function ProfilePage() {
 
           <div className="grid md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">First Name</label>
+              <label className="text-sm font-medium text-foreground">{t('profile.first_name')}</label>
               <input
                 type="text"
                 value={firstName}
@@ -221,7 +223,7 @@ export default function ProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Last Name</label>
+              <label className="text-sm font-medium text-foreground">{t('profile.last_name')}</label>
               <input
                 type="text"
                 value={lastName}
@@ -232,7 +234,7 @@ export default function ProfilePage() {
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-muted-foreground" /> Email Address
+              <Mail className="w-3.5 h-3.5 text-muted-foreground" /> {t('profile.email')}
             </label>
             <input
               type="email"
@@ -240,11 +242,11 @@ export default function ProfilePage() {
               readOnly
               className="w-full px-3 py-2.5 bg-muted/30 border border-border rounded-lg text-sm text-muted-foreground cursor-not-allowed"
             />
-            <p className="text-xs text-muted-foreground">Email cannot be changed. Contact your administrator.</p>
+            <p className="text-xs text-muted-foreground">{t('profile.email_desc')}</p>
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-muted-foreground" /> Role
+              <Shield className="w-3.5 h-3.5 text-muted-foreground" /> {t('profile.role')}
             </label>
             <input
               type="text"
@@ -264,7 +266,7 @@ export default function ProfilePage() {
               }`}
             >
               {profileSaved && <Check className="w-4 h-4" />}
-              {savingProfile ? 'Saving…' : profileSaved ? 'Saved!' : 'Save changes'}
+              {savingProfile ? t('profile.saving') : profileSaved ? t('profile.saved') : t('profile.save_changes')}
             </button>
             <button
               type="button"
@@ -272,17 +274,17 @@ export default function ProfilePage() {
               disabled={savingProfile}
               className="px-5 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </form>
       </div>
 
       {/* Change password card */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Key className="w-4 h-4 text-muted-foreground" /> Change Password
+      <div className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-3xl overflow-hidden">
+        <div className="px-8 py-5 border-b border-border/20">
+          <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <Key className="w-4 h-4 text-primary" /> {t('profile.change_password')}
           </h3>
         </div>
         <form onSubmit={handleChangePassword} className="p-6 space-y-4">
@@ -293,7 +295,7 @@ export default function ProfilePage() {
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Current Password</label>
+            <label className="text-sm font-medium text-foreground">{t('profile.current_password')}</label>
             <input
               type="password"
               value={currentPassword}
@@ -304,7 +306,7 @@ export default function ProfilePage() {
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">New Password</label>
+              <label className="text-sm font-medium text-foreground">{t('profile.new_password')}</label>
               <input
                 type="password"
                 value={newPassword}
@@ -314,7 +316,7 @@ export default function ProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Confirm Password</label>
+              <label className="text-sm font-medium text-foreground">{t('profile.confirm_password')}</label>
               <input
                 type="password"
                 value={confirmPassword}
@@ -324,7 +326,7 @@ export default function ProfilePage() {
               />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+          <p className="text-xs text-muted-foreground">{t('profile.password_min')}</p>
           <button
             type="submit"
             disabled={savingPassword}
@@ -335,7 +337,7 @@ export default function ProfilePage() {
             }`}
           >
             {passwordSaved && <Check className="w-4 h-4" />}
-            {savingPassword ? 'Updating…' : passwordSaved ? 'Password updated!' : 'Update password'}
+            {savingPassword ? t('profile.updating') : passwordSaved ? t('profile.password_updated') : t('profile.update_password')}
           </button>
         </form>
       </div>

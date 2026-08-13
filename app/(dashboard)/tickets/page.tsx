@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   X,
   AlertCircle,
+  Calendar,
   CheckSquare,
   Square,
   UserPlus,
@@ -21,8 +22,9 @@ import {
   Users
 } from 'lucide-react'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
-import { timeAgo, getInitials, CATEGORY_LABELS, STATUS_LABELS } from '@/lib/helpers'
+import { CATEGORY_LABELS, STATUS_LABELS, timeAgo, getInitials } from '@/lib/helpers'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -71,6 +73,7 @@ function authHeaders() {
 
 export default function TicketsPage() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -82,6 +85,7 @@ export default function TicketsPage() {
   const [status, setStatus] = useState<string>('')
   const [priority, setPriority] = useState<string>('')
   const [category, setCategory] = useState<string>('')
+  const [period, setPeriod] = useState<7 | 30 | 'all'>(7)
 
   // Single Assign
   const [assigningId, setAssigningId] = useState<number | null>(null)
@@ -95,7 +99,7 @@ export default function TicketsPage() {
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssignTechId, setBulkAssignTechId] = useState('')
 
-  const hasActiveFilters = !!(status || priority || category)
+  const hasActiveFilters = !!(status || priority || category || period !== 'all')
 
   useEffect(() => {
     if (!user || !['admin', 'support_agent'].includes(user.role)) return
@@ -141,12 +145,13 @@ export default function TicketsPage() {
 
   useEffect(() => {
     setSelected(new Set())
-  }, [tickets.length, status, priority, category])
+  }, [tickets.length, status, priority, category, period])
 
   function clearFilters() {
     setStatus('')
     setPriority('')
     setCategory('')
+    setPeriod('all')
   }
 
   async function handleAssign(ticketId: number) {
@@ -289,36 +294,73 @@ export default function TicketsPage() {
   const canFilter = user ? ['admin', 'support_agent'].includes(user.role) : false
   const canAct = user ? ['admin', 'support_agent'].includes(user.role) : false
   const canBulk = canAct
+  const showPeriodFilter = canFilter || isTechnician
+
+  // Client-side period filter
+  const periodFilteredTickets = (() => {
+    if (period === 'all') return tickets
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - period)
+    cutoff.setHours(0, 0, 0, 0)
+    return tickets.filter(t => new Date(t.created_at) >= cutoff)
+  })()
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-8">
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card/60 backdrop-blur-md p-6 rounded-2xl border border-border/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card/80 backdrop-blur-sm p-6 rounded-2xl border border-border/20 shadow-soft">
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {isTechnician ? 'My Assigned Tickets' : 'Ticket Queue'}
+              {isTechnician ? t('tickets.my_assigned') : t('tickets.queue')}
             </h1>
             {!loading && (
               <span className="px-2.5 py-0.5 text-xs font-semibold bg-primary/10 text-primary rounded-full border border-primary/20">
-                {tickets.length} {tickets.length === 1 ? 'ticket' : 'tickets'}
+                {tickets.length}
               </span>
             )}
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            {isTechnician ? 'Manage and update support requests assigned directly to you.' : 'Overview and manage all internal tickets.'}
+            {isTechnician ? t('tickets.tech_desc') : t('tickets.queue_desc')}
           </p>
         </div>
 
         {canCreate && (
           <Link
             href="/tickets/new"
-            className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-95 shadow-sm hover:shadow transition-all duration-200 active:scale-[0.98]"
+            className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-4 py-2.5 rounded-xl shadow-glow hover:bg-primary/90 transition-all duration-300 ease-out active:scale-[0.98]"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" /> Create Ticket
+            <Plus className="w-4 h-4 stroke-[2.5]" /> {t('tickets.create')}
           </Link>
         )}
       </div>
+
+      {/* Period Filter — visible for admin, agent, technician */}
+      {showPeriodFilter && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm border border-border/20 rounded-2xl p-1.5 shadow-soft">
+            <Calendar className="w-4 h-4 text-muted-foreground ml-2 mr-1 shrink-0" />
+            {([7, 30, 'all'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={cn(
+                  'px-4 py-2 rounded-xl text-xs font-black transition-all duration-300 whitespace-nowrap',
+                  period === p
+                    ? 'bg-primary text-primary-foreground shadow-glow'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                )}
+              >
+                {p === 7 ? 'Last 7 Days' : p === 30 ? 'Last 30 Days' : 'All Time'}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {periodFilteredTickets.length} ticket{periodFilteredTickets.length !== 1 ? 's' : ''}
+            {period !== 'all' ? ` in last ${period} days` : ' total'}
+          </span>
+        </div>
+      )}
 
       {/* Filter Toolbar */}
       {canFilter && (
@@ -326,23 +368,23 @@ export default function TicketsPage() {
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             
             {/* Pill Tabs for Status */}
-            <div className="flex items-center p-1 bg-muted/40 border border-border/50 rounded-full overflow-x-auto max-w-full hide-scrollbar shadow-inner">
+            <div className="flex items-center p-1 bg-muted/40 border border-border/20 rounded-xl overflow-x-auto max-w-full hide-scrollbar shadow-inner">
               <button
                 onClick={() => setStatus('')}
                 className={cn(
-                  "px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200",
-                  status === '' ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                  "px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-300",
+                  status === '' ? "bg-card shadow-soft text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                 )}
               >
-                All Requests
+                {t('tickets.all_requests')}
               </button>
               {['created', 'pending_assignment', 'in_progress', 'resolved'].map(s => (
                 <button
                   key={s}
                   onClick={() => setStatus(s)}
                   className={cn(
-                    "px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200",
-                    status === s ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    "px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-300",
+                    status === s ? "bg-card shadow-soft text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                   )}
                 >
                   {STATUS_LABELS[s as TicketStatus] || s}
@@ -355,9 +397,9 @@ export default function TicketsPage() {
               <select
                 value={priority}
                 onChange={e => setPriority(e.target.value)}
-                className="px-4 py-2 bg-background border border-border/60 rounded-full text-xs font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:text-foreground transition-all duration-150 appearance-none capitalize shadow-sm hover:border-border"
+                className="px-4 py-2 bg-card/80 border border-border/20 rounded-xl text-xs font-bold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:text-foreground transition-all duration-300 appearance-none capitalize shadow-soft hover:shadow-glow cursor-pointer"
               >
-                <option value="">Priority: All</option>
+                <option value="">{t('tickets.priority_all')}</option>
                 {PRIORITIES.map(p => (
                   <option key={p} value={p}>{p}</option>
                 ))}
@@ -366,9 +408,9 @@ export default function TicketsPage() {
               <select
                 value={category}
                 onChange={e => setCategory(e.target.value)}
-                className="px-4 py-2 bg-background border border-border/60 rounded-full text-xs font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:text-foreground transition-all duration-150 appearance-none shadow-sm hover:border-border"
+                className="px-4 py-2 bg-card/80 border border-border/20 rounded-xl text-xs font-bold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:text-foreground transition-all duration-300 appearance-none shadow-soft hover:shadow-glow cursor-pointer"
               >
-                <option value="">Category: All</option>
+                <option value="">{t('tickets.category_all')}</option>
                 {CATEGORIES.map(c => (
                   <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>
                 ))}
@@ -395,7 +437,7 @@ export default function TicketsPage() {
             <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
               {selected.size}
             </span>
-            <span className="text-sm font-semibold text-foreground">Items selected</span>
+            <span className="text-sm font-semibold text-foreground">{t('tickets.items_selected')}</span>
           </div>
 
           {bulkError && <p className="text-xs font-medium text-destructive basis-full">{bulkError}</p>}
@@ -409,7 +451,7 @@ export default function TicketsPage() {
                     onChange={e => setBulkAssignTechId(e.target.value)}
                     className="px-2.5 py-1 bg-transparent text-xs font-medium focus:outline-none"
                   >
-                    <option value="">Choose technician…</option>
+                    <option value="">{t('tickets.choose_tech')}</option>
                     {technicians.map(t => (
                       <option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>
                     ))}
@@ -419,13 +461,13 @@ export default function TicketsPage() {
                     disabled={!bulkAssignTechId || bulkBusy}
                     className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
-                    {bulkBusy ? 'Assigning…' : 'Confirm'}
+                    {bulkBusy ? t('tickets.assigning') : t('common.confirm')}
                   </button>
                   <button
                     onClick={() => { setShowBulkAssign(false); setBulkAssignTechId('') }}
                     className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                 </div>
               ) : (
@@ -433,7 +475,7 @@ export default function TicketsPage() {
                   onClick={() => setShowBulkAssign(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-xl text-xs font-semibold hover:opacity-90 shadow-2xs transition-all"
                 >
-                  <UserPlus className="w-3.5 h-3.5" /> Assign Selected
+                  <UserPlus className="w-3.5 h-3.5" /> {t('tickets.assign_selected')}
                 </button>
               )
             )}
@@ -444,7 +486,7 @@ export default function TicketsPage() {
                 disabled={bulkBusy}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 shadow-2xs transition-all disabled:opacity-50"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" /> {bulkBusy ? 'Closing…' : 'Mark Closed'}
+                <CheckCircle2 className="w-3.5 h-3.5" /> {bulkBusy ? t('tickets.closing') : t('tickets.mark_closed')}
               </button>
             )}
 
@@ -454,7 +496,7 @@ export default function TicketsPage() {
                 disabled={bulkBusy}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-semibold hover:bg-rose-100 shadow-2xs transition-all disabled:opacity-50"
               >
-                <Ban className="w-3.5 h-3.5" /> {bulkBusy ? 'Cancelling…' : 'Cancel Requests'}
+                <Ban className="w-3.5 h-3.5" /> {bulkBusy ? t('tickets.cancelling') : t('tickets.cancel_requests')}
               </button>
             )}
 
@@ -478,7 +520,7 @@ export default function TicketsPage() {
               onClick={() => setSelected(new Set())}
               className="text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2 ml-2"
             >
-              Deselect all
+              {t('tickets.deselect_all')}
             </button>
           </div>
         </div>
@@ -501,21 +543,23 @@ export default function TicketsPage() {
         {loading ? (
           <div className="bg-card/60 border border-border/60 rounded-2xl p-12 text-center text-muted-foreground space-y-3">
             <div className="inline-block w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-xs font-medium">Loading ticket queue…</p>
+            <p className="text-xs font-medium">{t('tickets.loading')}</p>
           </div>
-        ) : tickets.length === 0 ? (
+        ) : periodFilteredTickets.length === 0 ? (
           <div className="bg-card/60 border border-border/60 rounded-2xl p-16 text-center">
             <div className="flex flex-col items-center justify-center space-y-2 text-muted-foreground">
               <Inbox className="w-10 h-10 stroke-1 opacity-50" />
-              <p className="text-sm font-semibold text-foreground">No tickets found</p>
+              <p className="text-sm font-semibold text-foreground">
+                {period !== 'all' ? `No tickets in the last ${period} days` : t('tickets.no_tickets')}
+              </p>
               <p className="text-xs">
-                {hasActiveFilters ? 'Try adjusting or clearing your filters.' : 'There are currently no tickets available.'}
+                {period !== 'all' ? 'Try switching to Last 30 Days or All Time' : hasActiveFilters ? t('tickets.no_tickets_filter') : t('tickets.no_tickets_desc')}
               </p>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {tickets.map(ticket => {
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {periodFilteredTickets.map(ticket => {
               const overdue = isOverdue(ticket)
               const nextStatus = NEXT_STATUS[ticket.status] ?? null
               const isSelected = selected.has(ticket.id)
@@ -524,19 +568,19 @@ export default function TicketsPage() {
                 <div
                   key={ticket.id}
                   className={cn(
-                    "group relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-card rounded-2xl border transition-all duration-200",
+                    "group relative flex flex-col gap-4 p-6 bg-card/80 backdrop-blur-sm rounded-3xl border transition-all duration-300 ease-out hover:-translate-y-1",
                     isSelected
-                      ? "border-primary/50 bg-primary/5 shadow-sm"
+                      ? "border-primary/50 bg-primary/5 shadow-glow"
                       : overdue
-                      ? "border-rose-200 bg-rose-50/30 hover:border-rose-300"
-                      : "border-border/60 hover:border-primary/30 hover:shadow-sm"
+                      ? "border-rose-200 bg-rose-50/30 shadow-soft hover:border-rose-300 hover:shadow-glow"
+                      : "border-border/20 shadow-soft hover:shadow-glow"
                   )}
                 >
-                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                  <div className="flex items-start gap-4 w-full">
                     {canBulk && (
                       <button
                         onClick={() => toggleSelected(ticket.id)}
-                        className="mt-1 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                        className="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
                       >
                         {isSelected ? (
                           <CheckSquare className="w-5 h-5 text-primary" />
@@ -546,31 +590,39 @@ export default function TicketsPage() {
                       </button>
                     )}
 
-                    <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-mono font-medium text-muted-foreground">#{ticket.id}</span>
-                        <CategoryBadge category={ticket.category as any} size="sm" />
-                        <PriorityBadge priority={ticket.priority as any} size="sm" />
-                        <StatusBadge status={ticket.status as any} size="sm" />
+                    <div className="flex flex-col gap-2 min-w-0 flex-1">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-xs font-black text-muted-foreground bg-muted/50 px-2 py-1 rounded-md shrink-0">#{ticket.id}</span>
                         {overdue && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-700 rounded-md">
-                            <Clock className="w-3 h-3 text-rose-600" /> Overdue
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black bg-rose-100 text-rose-700 rounded-lg">
+                            <Clock className="w-3 h-3 text-rose-600" /> {t('tickets.overdue')}
                           </span>
                         )}
                       </div>
 
                       <Link
                         href={`/tickets/${ticket.id}`}
-                        className="text-base font-bold text-foreground hover:text-primary transition-colors truncate"
+                        className="text-lg font-black text-foreground hover:text-primary transition-colors line-clamp-2 leading-tight mt-1 mb-2"
                       >
                         {ticket.title}
                       </Link>
 
-                      <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground mt-1">
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5" />
-                          {timeAgo(ticket.created_at)}
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <CategoryBadge category={ticket.category as any} size="sm" />
+                        <PriorityBadge priority={ticket.priority as any} size="sm" />
+                        <StatusBadge status={ticket.status as any} size="sm" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1" />
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-border/20">
+                    <div className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        {timeAgo(ticket.created_at)}
+                      </span>
                         {!isTechnician && (
                           <span className="flex items-center gap-1.5">
                             <Users className="w-3.5 h-3.5" />
@@ -580,16 +632,15 @@ export default function TicketsPage() {
                                 {ticket.status === 'pending_assignment' && <span className="text-amber-600"> (pending)</span>}
                               </span>
                             ) : (
-                              <span className="italic">Unassigned</span>
+                              <span className="italic">{t('tickets.unassigned')}</span>
                             )}
                           </span>
                         )}
                       </div>
                     </div>
-                  </div>
 
-                  {canAct && (
-                    <div className="flex flex-row sm:flex-col items-end justify-end gap-2 shrink-0">
+                    {canAct && (
+                      <div className="flex items-center gap-2 shrink-0">
                       {!ticket.assigned_to_id && ticket.status === 'created' && (
                         assigningId === ticket.id ? (
                           <div className="inline-flex items-center gap-1 bg-background p-1 border border-border rounded-xl shadow-xs">
@@ -620,7 +671,7 @@ export default function TicketsPage() {
                         ) : (
                           <button
                             onClick={() => setAssigningId(ticket.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-semibold transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-colors shadow-sm"
                           >
                             <UserPlus className="w-3.5 h-3.5" /> Assign
                           </button>
@@ -631,7 +682,7 @@ export default function TicketsPage() {
                         <button
                           onClick={() => handleStatusChange(ticket.id, nextStatus)}
                           disabled={busyId === ticket.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 capitalize"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 capitalize shadow-sm"
                         >
                           {busyId === ticket.id ? (
                             '…'

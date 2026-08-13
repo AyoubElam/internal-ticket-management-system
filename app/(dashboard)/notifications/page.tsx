@@ -4,6 +4,7 @@ import { Bell, Check, CheckCheck, Ticket, Wrench, Star, Info, Clock, X } from 'l
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/helpers'
 import { useNotifications } from '@/lib/notifications-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 
 function notifIcon(message: string) {
   const m = message.toLowerCase()
@@ -25,6 +26,7 @@ function notifColor(message: string) {
 
 export default function NotificationsPage() {
   const { notifications, unreadCount, loading, markRead, markAllRead } = useNotifications()
+  const { t } = useLanguage()
 
   const unread = notifications.filter(n => !n.is_read)
   const read = notifications.filter(n => n.is_read)
@@ -42,11 +44,11 @@ export default function NotificationsPage() {
             <Bell className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Notifications</h1>
+            <h1 className="text-xl font-bold text-foreground">{t('notifications.title')}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {unreadCount > 0
-                ? <><span className="font-semibold text-primary">{unreadCount}</span> unread message{unreadCount > 1 ? 's' : ''}</>
-                : <span className="text-emerald-600 font-medium">✓ All caught up</span>}
+                ? <><span className="font-semibold text-primary">{unreadCount}</span> {unreadCount > 1 ? t('notifications.unread_messages') : t('notifications.unread_message')}</>
+                : <span className="text-emerald-600 font-medium">✓ {t('notifications.all_caught_up')}</span>}
             </p>
           </div>
         </div>
@@ -57,7 +59,7 @@ export default function NotificationsPage() {
             className="flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             <CheckCheck className="w-4 h-4" />
-            <span className="hidden sm:inline">Mark all read</span>
+            <span className="hidden sm:inline">{t('notifications.mark_all_read')}</span>
           </button>
         )}
       </div>
@@ -65,7 +67,7 @@ export default function NotificationsPage() {
       {loading && (
         <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-medium">Loading notifications…</span>
+          <span className="text-sm font-medium">{t('notifications.loading')}</span>
         </div>
       )}
 
@@ -75,8 +77,8 @@ export default function NotificationsPage() {
             <Bell className="w-8 h-8 text-muted-foreground/40" />
           </div>
           <div className="text-center">
-            <p className="text-base font-bold text-foreground">Nothing here yet</p>
-            <p className="text-sm text-muted-foreground mt-1">New notifications will appear here.</p>
+            <p className="text-base font-bold text-foreground">{t('notifications.nothing_here')}</p>
+            <p className="text-sm text-muted-foreground mt-1">{t('notifications.new_will_appear')}</p>
           </div>
         </div>
       )}
@@ -85,7 +87,7 @@ export default function NotificationsPage() {
       {!loading && unread.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">
-            New
+            {t('notifications.new')}
           </p>
           <div className="flex flex-col gap-2">
             {unread.map(n => (
@@ -129,7 +131,7 @@ export default function NotificationsPage() {
         <div className="space-y-2">
           {unread.length > 0 && (
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">
-              Earlier
+              {t('notifications.earlier')}
             </p>
           )}
           <div className="flex flex-col gap-2">

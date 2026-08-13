@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
+import path from 'path'
 
 import { testConnection } from './config/database'
 import { errorHandler }   from './middleware/errorHandler'
@@ -22,7 +23,9 @@ const app  = express()
 const PORT = Number(process.env.PORT ?? 4000)
 
 // ── Security & logging ───────────────────────────────────────
-app.use(helmet())
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 
 const allowedOrigins = ['http://localhost:3000', 'http://localhost:3001']
 
@@ -53,6 +56,11 @@ app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 200 }))
 // ── Body parsing ─────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
+
+// ── Serve uploaded attachments ────────────────────────────────
+// Files stored in backend/uploads, served at /uploads/*
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
+
 
 // ── Routes ───────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes)

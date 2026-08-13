@@ -20,9 +20,9 @@ const COLOR_MAP = {
 
 export default function StatCard({ title, value, subtitle, icon, color = 'default', trend }: StatCardProps) {
   return (
-    <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-card/80 backdrop-blur-sm rounded-2xl p-5 flex flex-col gap-3 shadow-soft border border-border/20 hover:shadow-glow hover:-translate-y-0.5 transition-all duration-300 ease-out cursor-default">
       <div className="flex items-start justify-between">
-        <p className="text-sm text-muted-foreground font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground font-semibold">{title}</p>
         <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', COLOR_MAP[color])}>
           {icon}
         </div>

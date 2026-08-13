@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Bell, AlignLeft, Plus, CheckCheck, X, Ticket, Wrench, Star, Info, Clock } from 'lucide-react'
+import { Bell, AlignLeft, Plus, CheckCheck, X, Ticket, Wrench, Star, Info, Clock, Globe } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 import { getInitials, ROLE_LABELS } from '@/lib/helpers'
 import { useNotifications } from '@/lib/notifications-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import { timeAgo } from '@/lib/helpers'
 import { cn } from '@/lib/utils'
 
@@ -36,9 +37,13 @@ function notifColor(message: string) {
 export default function Topbar({ onMenuClick, title }: TopbarProps) {
   const { user } = useAuth()
   const { notifications, unreadCount, loading, markRead, markAllRead } = useNotifications()
+  const { language, setLanguage, t } = useLanguage()
   const [open, setOpen] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const langPanelRef = useRef<HTMLDivElement>(null)
+  const langButtonRef = useRef<HTMLButtonElement>(null)
 
   if (!user) return null
 
@@ -52,6 +57,12 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
         buttonRef.current && !buttonRef.current.contains(e.target as Node)
       ) {
         setOpen(false)
+      }
+      if (
+        langPanelRef.current && !langPanelRef.current.contains(e.target as Node) &&
+        langButtonRef.current && !langButtonRef.current.contains(e.target as Node)
+      ) {
+        setLangOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -76,12 +87,57 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
         {canCreateTicket && (
           <Link
             href="/tickets/new"
-            className="hidden sm:flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+            className="hidden sm:flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-xl shadow-glow hover:bg-primary/90 transition-all duration-300 ease-out active:scale-[0.98]"
           >
             <Plus className="w-3.5 h-3.5" />
-            New Ticket
+            {language === 'fr' ? 'Nouveau Ticket' : 'New Ticket'}
           </Link>
         )}
+
+        {/* Language Switcher */}
+        <div className="relative">
+          <button
+            ref={langButtonRef}
+            onClick={() => setLangOpen(prev => !prev)}
+            className={cn(
+              'relative p-2 rounded-xl transition-all flex items-center gap-1',
+              langOpen
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            )}
+            aria-label="Language"
+          >
+            <Globe className="w-5 h-5" />
+            <span className="text-xs font-bold uppercase">{language}</span>
+          </button>
+          
+          {langOpen && (
+            <div
+              ref={langPanelRef}
+              className="absolute right-0 top-[calc(100%+8px)] w-32 flex flex-col bg-card/90 backdrop-blur-md rounded-xl border border-border/40 shadow-soft overflow-hidden z-50 p-1"
+              style={{ animation: 'fadeSlideDown 0.15s ease-out' }}
+            >
+              <button 
+                onClick={() => { setLanguage('en'); setLangOpen(false); }}
+                className={cn(
+                  "px-3 py-2 text-sm text-left rounded-lg transition-colors hover:bg-accent",
+                  language === 'en' ? "bg-primary/10 text-primary font-bold" : "text-foreground font-medium"
+                )}
+              >
+                🇬🇧 English
+              </button>
+              <button 
+                onClick={() => { setLanguage('fr'); setLangOpen(false); }}
+                className={cn(
+                  "px-3 py-2 text-sm text-left rounded-lg transition-colors hover:bg-accent mt-1",
+                  language === 'fr' ? "bg-primary/10 text-primary font-bold" : "text-foreground font-medium"
+                )}
+              >
+                🇫🇷 Français
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Notification Bell + Dropdown */}
         <div className="relative">
@@ -108,14 +164,14 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
           {open && (
             <div
               ref={panelRef}
-              className="absolute right-0 top-[calc(100%+8px)] w-[380px] max-h-[520px] flex flex-col bg-card rounded-2xl border border-border/80 shadow-xl overflow-hidden z-50"
+              className="absolute right-0 top-[calc(100%+8px)] w-[380px] max-h-[520px] flex flex-col bg-card/95 backdrop-blur-md rounded-2xl border border-border/40 shadow-soft overflow-hidden z-50"
               style={{ animation: 'fadeSlideDown 0.15s ease-out' }}
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-bold text-foreground">Notifications</span>
+                  <span className="text-sm font-bold text-foreground">{t('notifications.title')}</span>
                   {unreadCount > 0 && (
                     <span className="text-[10px] font-bold bg-rose-500 text-white px-1.5 py-0.5 rounded-full">
                       {unreadCount}
@@ -128,7 +184,7 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
                       onClick={markAllRead}
                       className="text-[11px] font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                     >
-                      <CheckCheck className="w-3.5 h-3.5" /> All read
+                      <CheckCheck className="w-3.5 h-3.5" /> {t('notifications.all_read_btn')}
                     </button>
                   )}
                   <button
@@ -145,7 +201,7 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
                 {loading && (
                   <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
                     <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    <span className="text-xs font-medium">Loading…</span>
+                    <span className="text-xs font-medium">{t('notifications.loading_short')}</span>
                   </div>
                 )}
 
@@ -154,8 +210,8 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
                     <div className="w-12 h-12 rounded-2xl bg-muted/50 flex items-center justify-center">
                       <Bell className="w-6 h-6 opacity-40" />
                     </div>
-                    <p className="text-sm font-medium">You're all caught up!</p>
-                    <p className="text-xs opacity-70">No notifications right now.</p>
+                    <p className="text-sm font-medium">{t('notifications.caught_up')}</p>
+                    <p className="text-xs opacity-70">{t('notifications.no_notifs_right_now')}</p>
                   </div>
                 )}
 
@@ -196,24 +252,24 @@ export default function Topbar({ onMenuClick, title }: TopbarProps) {
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3 border-t border-border/50 bg-muted/20">
+              <div className="px-5 py-3">
                 <Link
                   href="/notifications"
                   onClick={() => setOpen(false)}
-                  className="text-xs font-bold text-primary hover:text-primary/80 transition-colors w-full flex items-center justify-center gap-1"
+                  className="text-xs font-bold text-primary hover:text-primary/80 transition-colors w-full flex items-center justify-center gap-1 p-2 rounded-xl hover:bg-primary/5"
                 >
-                  View all notifications
+                  {t('notifications.view_all')}
                 </Link>
               </div>
             </div>
           )}
         </div>
 
-        <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground">
+        <Link href="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity active:scale-[0.98]">
+          <div className="w-8 h-8 rounded-xl shadow-glow bg-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground">
             {getInitials(user.firstName, user.lastName)}
           </div>
-          <span className="hidden md:block text-xs font-semibold text-foreground">
+          <span className="hidden md:block text-xs font-bold text-foreground">
             {user.firstName}
           </span>
         </Link>

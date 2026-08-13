@@ -26,10 +26,16 @@ const STATUS_CONFIG: Record<TicketStatus, { icon: any, color: string }> = {
 export function StatusBadge({ status, size = 'md' }: { status: TicketStatus, size?: 'sm' | 'md' }) {
   const Icon = STATUS_CONFIG[status]?.icon || Circle
   const color = STATUS_CONFIG[status]?.color || 'text-muted-foreground'
+  
   return (
-    <div className={cn("inline-flex items-center gap-1.5 font-medium", size === 'sm' ? "text-[11px]" : "text-sm", color)}>
-      <Icon className={size === 'sm' ? "w-3 h-3" : "w-4 h-4"} />
-      <span className="text-foreground">{STATUS_LABELS[status]}</span>
+    <div className={cn(
+      "inline-flex items-center gap-1.5 font-semibold rounded-full",
+      size === 'sm' ? "px-2 py-0.5 text-[10px]" : "px-3 py-1 text-xs",
+      color.replace('text-', 'bg-').replace('500', '500/10'),
+      color
+    )}>
+      <Icon className={size === 'sm' ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      <span>{STATUS_LABELS[status]}</span>
     </div>
   )
 }
@@ -45,9 +51,14 @@ export function PriorityBadge({ priority, size = 'md' }: { priority: TicketPrior
   const Icon = PRIORITY_CONFIG[priority]?.icon || Circle
   const color = PRIORITY_CONFIG[priority]?.color || 'text-muted-foreground'
   return (
-    <div className={cn("inline-flex items-center gap-1.5 font-medium", size === 'sm' ? "text-[11px]" : "text-sm", color)}>
-      <Icon className={size === 'sm' ? "w-3 h-3" : "w-4 h-4"} />
-      <span className="text-foreground">{PRIORITY_LABELS[priority]}</span>
+    <div className={cn(
+      "inline-flex items-center gap-1.5 font-semibold rounded-full",
+      size === 'sm' ? "px-2 py-0.5 text-[10px]" : "px-3 py-1 text-xs",
+      color.replace('text-', 'bg-').replace('500', '500/10'),
+      color
+    )}>
+      <Icon className={size === 'sm' ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      <span>{PRIORITY_LABELS[priority]}</span>
     </div>
   )
 }
@@ -63,9 +74,14 @@ export function CategoryBadge({ category, size = 'md' }: { category: TicketCateg
   const Icon = CATEGORY_CONFIG[category]?.icon || Circle
   const color = CATEGORY_CONFIG[category]?.color || 'text-muted-foreground'
   return (
-    <div className={cn("inline-flex items-center gap-1.5 font-medium", size === 'sm' ? "text-[11px]" : "text-sm", color)}>
-      <Icon className={size === 'sm' ? "w-3 h-3" : "w-4 h-4"} />
-      <span className="text-foreground">{CATEGORY_LABELS[category]}</span>
+    <div className={cn(
+      "inline-flex items-center gap-1.5 font-semibold rounded-full",
+      size === 'sm' ? "px-2 py-0.5 text-[10px]" : "px-3 py-1 text-xs",
+      color.replace('text-', 'bg-').replace('500', '500/10'),
+      color
+    )}>
+      <Icon className={size === 'sm' ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      <span>{CATEGORY_LABELS[category]}</span>
     </div>
   )
 }
@@ -81,9 +97,13 @@ export function RoleBadge({ role }: { role: Role }) {
   const Icon = ROLE_CONFIG[role]?.icon || Circle
   const color = ROLE_CONFIG[role]?.color || 'text-muted-foreground'
   return (
-    <div className={cn("inline-flex items-center gap-1.5 font-medium text-xs", color)}>
-      <Icon className="w-3.5 h-3.5" />
-      <span className="text-foreground">{ROLE_LABELS[role]}</span>
+    <div className={cn(
+      "inline-flex items-center gap-1.5 font-semibold rounded-full px-2.5 py-1 text-[11px]",
+      color.replace('text-', 'bg-').replace('500', '500/10'),
+      color
+    )}>
+      <Icon className="w-3 h-3" />
+      <span>{ROLE_LABELS[role]}</span>
     </div>
   )
 }
@@ -98,9 +118,13 @@ export function InterventionBadge({ status }: { status: InterventionStatus }) {
   const Icon = INTERVENTION_CONFIG[status]?.icon || Circle
   const color = INTERVENTION_CONFIG[status]?.color || 'text-muted-foreground'
   return (
-    <div className={cn("inline-flex items-center gap-1.5 font-medium text-xs", color)}>
-      <Icon className="w-3.5 h-3.5" />
-      <span className="text-foreground">{INTERVENTION_STATUS_LABELS[status]}</span>
+    <div className={cn(
+      "inline-flex items-center gap-1.5 font-semibold rounded-full px-2.5 py-1 text-[11px]",
+      color.replace('text-', 'bg-').replace('500', '500/10'),
+      color
+    )}>
+      <Icon className="w-3 h-3" />
+      <span>{INTERVENTION_STATUS_LABELS[status]}</span>
     </div>
   )
 }
