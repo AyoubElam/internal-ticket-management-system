@@ -22,7 +22,10 @@
     "users": "Utilisateurs",
     "interventions": "Interventions",
     "notifications": "Notifications",
-    "ratings": "Évaluations"
+    "ratings": "Évaluations",
+    "technicians": "Techniciens",
+    "categories": "Catégories",
+    "profile": "Profil"
   },
   "topbar": {
     "profile": "Profil",
@@ -55,6 +58,7 @@
     "overdue": "En retard"
   },
   "profile": {
+    "title": "Mon Profil",
     "active": "Actif",
     "inactive": "Inactif",
     "tickets_submitted": "Tickets Soumis",
@@ -97,7 +101,9 @@
     "access_restricted": "Accès restreint aux administrateurs et agents de support."
   },
   "analytics": {
+    "title": "Analyses & KPI",
     "all_time": "Depuis toujours",
+    "total_tickets": "Total des Tickets",
     "unresolved": "Non résolus",
     "last_24h": "Dernières 24h",
     "avg_time": "Temps moyen",

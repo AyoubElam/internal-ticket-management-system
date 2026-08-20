@@ -15,7 +15,10 @@ import usersRoutes         from './routes/users.routes'
 import interventionsRoutes from './routes/interventions.routes'
 import analyticsRoutes     from './routes/analytics.routes'
 import notificationsRoutes from './routes/notifications.routes'
-import ratingsRoutes from './routes/rating.routes'
+import ratingsRoutes       from './routes/rating.routes'
+import categoriesRoutes    from './routes/categories.routes'
+
+
 
 dotenv.config()
 
@@ -69,8 +72,8 @@ app.use('/api/users',         usersRoutes)
 app.use('/api/interventions', interventionsRoutes)
 app.use('/api/analytics',     analyticsRoutes)
 app.use('/api/notifications', notificationsRoutes)
-
-app.use('/api/ratings', ratingsRoutes)
+app.use('/api/ratings',       ratingsRoutes)
+app.use('/api/categories',    categoriesRoutes)
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

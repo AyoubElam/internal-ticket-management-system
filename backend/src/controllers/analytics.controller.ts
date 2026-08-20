@@ -24,9 +24,22 @@ export async function getKpiStats(req: AuthRequest, res: Response, next: NextFun
       `SELECT priority, COUNT(*) AS count FROM tickets GROUP BY priority`
     )
 
+    // category is now category_id (FK to categories.id) — join to get the
+    // slug back for the frontend, which still expects the old
+    // 'network_support' style string in byCategory[].category.
     const [byCategory] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT category, COUNT(*) AS count FROM tickets GROUP BY category`
+      `SELECT cat.slug AS category, COUNT(*) AS count
+       FROM tickets t
+       LEFT JOIN categories cat ON cat.id = t.category_id
+       GROUP BY cat.id, cat.slug`
     )
+
+    // Read the requested period (7 or 30 days, default 7)
+    const days = Math.min(Math.max(parseInt(String(req.query.days)) || 7, 1), 30)
+
+    // Build a numbers table with 0..days-1 to generate one row per day.
+    // MySQL doesn't have generate_series, so we build it with UNIONs.
+    const nums = Array.from({ length: days }, (_, i) => `SELECT ${i} AS n`).join(' UNION ALL ')
 
     const [overTime] = await pool.query<mysql.RowDataPacket[]>(`
       SELECT
@@ -34,10 +47,8 @@ export async function getKpiStats(req: AuthRequest, res: Response, next: NextFun
         COALESCE(SUM(t.created_at >= d.dt AND t.created_at < DATE_ADD(d.dt, INTERVAL 1 DAY)), 0) AS created,
         COALESCE(SUM(t.resolved_at >= d.dt AND t.resolved_at < DATE_ADD(d.dt, INTERVAL 1 DAY)), 0) AS resolved
       FROM (
-        SELECT DATE(NOW() - INTERVAL (a.a + (10 * b.a)) DAY) AS dt
-        FROM (SELECT 0 a UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) a
-        CROSS JOIN (SELECT 0 a) b
-        WHERE a.a <= 6
+        SELECT DATE(NOW() - INTERVAL nums.n DAY) AS dt
+        FROM (${nums}) AS nums
       ) d
       LEFT JOIN tickets t ON 1=1
       GROUP BY d.dt

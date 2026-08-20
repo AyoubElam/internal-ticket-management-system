@@ -6,8 +6,9 @@ import {
   CheckSquare, Square, Users, UserCheck, UserX, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import { RoleBadge } from '@/components/status-badge'
-import { formatDateShort, getInitials, ROLE_LABELS } from '@/lib/helpers'
+import { formatDateShort, getInitials } from '@/lib/helpers'
 import type { Role } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -30,6 +31,7 @@ function authHeaders() {
 
 export default function UsersPage() {
   const { user } = useAuth()
+  const { t } = useLanguage()
 
   const [users, setUsers]     = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -195,7 +197,7 @@ export default function UsersPage() {
           const count = users.filter(u => u.role === role && !!u.is_active).length
           return (
             <div key={role} className="bg-card/80 backdrop-blur-sm shadow-soft border border-border/20 rounded-2xl p-5 hover:-translate-y-0.5 transition-all duration-300">
-              <p className="text-xs font-semibold text-muted-foreground">{ROLE_LABELS[role]}</p>
+              <p className="text-xs font-semibold text-muted-foreground">{t(`role.${role}`)}</p>
               <p className="text-2xl font-bold text-foreground mt-1">{loading ? '—' : count}</p>
             </div>
           )
@@ -208,7 +210,7 @@ export default function UsersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search users…"
+            placeholder={t('users.search_placeholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 shadow-soft transition-all"
@@ -225,7 +227,7 @@ export default function UsersPage() {
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
             >
-              {r === 'all' ? 'All' : r.replace('_', ' ')}
+              {r === 'all' ? t('common.all') : t(`role.${r}`)}
             </button>
           ))}
         </div>
@@ -233,7 +235,7 @@ export default function UsersPage() {
           onClick={() => setShowAddModal(true)}
           className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-bold px-4 py-2.5 rounded-xl shadow-glow hover:bg-primary/90 transition-all duration-300 ml-auto active:scale-[0.98]"
         >
-          <UserPlus className="w-4 h-4" /> Add User
+          <UserPlus className="w-4 h-4" /> {t('users.add_user')}
         </button>
       </div>
 

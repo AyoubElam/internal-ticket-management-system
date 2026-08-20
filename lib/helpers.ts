@@ -34,18 +34,37 @@ export const PRIORITY_COLORS: Record<TicketPriority, string> = {
   critical: 'bg-rose-100 text-rose-700 border-rose-200',
 }
 
-export const CATEGORY_LABELS: Record<TicketCategory, string> = {
-  network_support:    'Network Support',
-  field_intervention: 'Field Intervention',
-  equipment_request:  'Equipment Request',
-  system_access:      'System Access',
+// Categories are now dynamic (fetched from GET /api/categories, backed by
+// the `categories` table) instead of a hardcoded map — this lets you add
+// new categories via the DB with zero frontend deploys.
+//
+// FALLBACK_CATEGORY_LABELS below only exists for the rare case where a
+// component has a category slug but no label came with it (e.g. an old
+// cached object). Anywhere you have the live ticket/category data, prefer
+// that label over this map.
+const FALLBACK_CATEGORY_LABELS: Record<string, string> = {
+  network_support:     'Network Support',
+  field_intervention:  'Field Intervention',
+  equipment_request:   'Equipment Request',
+  system_access:       'System Access',
+  software_support:    'Software Support',
+  account_management:  'Account Management',
 }
 
-export const CATEGORY_ICONS: Record<TicketCategory, string> = {
-  network_support:    'router',
-  field_intervention: 'hammer',
-  equipment_request:  'package',
-  system_access:      'key',
+// Turns a slug into a readable label if it's not in the fallback map at
+// all, e.g. 'facilities_request' -> 'Facilities Request'. This means a
+// brand-new category added only to the DB still displays reasonably
+// even before anyone updates this file (which, ideally, nobody has to).
+function slugToLabel(slug: string): string {
+  return slug
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+export function getCategoryLabel(category: TicketCategory, providedLabel?: string | null): string {
+  if (providedLabel) return providedLabel
+  return FALLBACK_CATEGORY_LABELS[category] ?? slugToLabel(category)
 }
 
 export const INTERVENTION_STATUS_LABELS: Record<InterventionStatus, string> = {
@@ -103,4 +122,14 @@ export function timeAgo(iso: string): string {
 
 export function getInitials(firstName: string, lastName: string): string {
   return `${firstName[0]}${lastName[0]}`.toUpperCase()
+}
+
+/**
+ * Returns the appropriate landing page for a given role.
+ * Admins / support agents → /dashboard
+ * Technicians / employees → /tickets
+ */
+export function getHomeRoute(role: string): string {
+  if (role === 'admin' || role === 'support_agent') return '/dashboard'
+  return '/tickets'
 }

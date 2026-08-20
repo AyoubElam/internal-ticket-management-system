@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Ticket, AlertCircle, Paperclip, X, Upload } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { CATEGORY_LABELS, PRIORITY_LABELS } from '@/lib/helpers'
-import type { TicketCategory, TicketPriority } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/language-context'
+import type { TicketCategory, TicketPriority, Category } from '@/lib/types'
 
-const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
 const MAX_FILES = 3
 const MAX_MB = 10
@@ -29,10 +28,19 @@ const PRIORITY_COLORS: Record<TicketPriority, string> = {
 export default function NewTicketPage() {
   const router = useRouter()
   const { user } = useAuth()
+  const { t } = useLanguage()
 
   const [title,       setTitle]       = useState('')
   const [description, setDescription] = useState('')
-  const [category,    setCategory]    = useState<TicketCategory>('network_support')
+
+  // Categories now come from the API (backed by the `categories` table)
+  // instead of a hardcoded array — adding a new category is a DB insert,
+  // no frontend deploy needed.
+  const [categories,        setCategories]        = useState<Category[]>([])
+  const [categoriesLoading, setCategoriesLoading]  = useState(true)
+  const [categoriesError,   setCategoriesError]    = useState('')
+  const [category,          setCategory]           = useState<TicketCategory>('')
+
   const [priority,    setPriority]    = useState<TicketPriority>('medium')
   const [files,       setFiles]       = useState<File[]>([])
   const [submitting,  setSubmitting]  = useState(false)
@@ -40,6 +48,28 @@ export default function NewTicketPage() {
   const [error,       setError]       = useState('')
 
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    async function fetchCategories() {
+      setCategoriesLoading(true)
+      setCategoriesError('')
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch('http://localhost:4000/api/categories', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to load categories.')
+        setCategories(data)
+        if (data.length > 0) setCategory(data[0].slug)
+      } catch (err: any) {
+        setCategoriesError(err.message || 'Failed to load categories.')
+      } finally {
+        setCategoriesLoading(false)
+      }
+    }
+    fetchCategories()
+  }, [])
 
   if (!user) return null
 
@@ -66,6 +96,11 @@ export default function NewTicketPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (!category) {
+      setError('Please select a category.')
+      return
+    }
 
     setSubmitting(true)
     setError('')
@@ -138,22 +173,33 @@ export default function NewTicketPage() {
         {/* Category */}
         <div className="space-y-2">
           <label className="text-sm font-medium">Category <span className="text-red-400">*</span></label>
-          <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategory(cat)}
-                className={`text-left px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
-                  category === cat
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                {CATEGORY_LABELS[cat]}
-              </button>
-            ))}
-          </div>
+
+          {categoriesLoading && (
+            <p className="text-sm text-muted-foreground">Loading categories…</p>
+          )}
+
+          {!categoriesLoading && categoriesError && (
+            <p className="text-sm text-red-400">{categoriesError}</p>
+          )}
+
+          {!categoriesLoading && !categoriesError && (
+            <div className="grid grid-cols-2 gap-2">
+              {categories.map(cat => (
+                <button
+                  key={cat.slug}
+                  type="button"
+                  onClick={() => setCategory(cat.slug)}
+                  className={`text-left px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                    category === cat.slug
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:bg-accent hover:text-foreground'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Title */}
@@ -205,7 +251,7 @@ export default function NewTicketPage() {
                     : 'border-border bg-card hover:bg-accent'
                 }`}
               >
-                <p className="text-sm font-semibold text-foreground capitalize">{PRIORITY_LABELS[p]}</p>
+                <p className="text-sm font-semibold text-foreground capitalize">{t(`priority.${p}`)}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">{PRIORITY_DESC[p]}</p>
               </button>
             ))}
@@ -302,7 +348,7 @@ export default function NewTicketPage() {
           </button>
           <button
             type="submit"
-            disabled={submitting || !title.trim() || !description.trim()}
+            disabled={submitting || !title.trim() || !description.trim() || !category}
             className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? 'Submitting…' : 'Submit Ticket'}

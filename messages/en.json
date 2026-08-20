@@ -1,4 +1,68 @@
 {
+  "navigation": {
+    "dashboard": "Dashboard",
+    "tickets": "Tickets",
+    "interventions": "Interventions",
+    "technicians": "Technicians",
+    "analytics": "Analytics & KPIs",
+    "ratings": "Ratings",
+    "users": "Users",
+    "categories": "Categories",
+    "notifications": "Notifications",
+    "profile": "Profile"
+  },
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "tickets": "Tickets",
+    "interventions": "Interventions",
+    "technicians": "Technicians",
+    "analytics": "Analytics",
+    "ratings": "Ratings",
+    "users": "Users",
+    "categories": "Categories",
+    "notifications": "Notifications",
+    "profile": "Profile"
+  },
+  "topbar": {
+    "profile": "Profile",
+    "settings": "Settings",
+    "logout": "Log out",
+    "new_ticket": "New Ticket"
+  },
+  "status": {
+    "created": "Created",
+    "pending_assignment": "Pending Acceptance",
+    "assigned": "Assigned",
+    "in_progress": "In Progress",
+    "resolved": "Resolved",
+    "closed": "Closed",
+    "cancelled": "Cancelled"
+  },
+  "priority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "role": {
+    "admin": "Administrator",
+    "support_agent": "Support Agent",
+    "technician": "Technician",
+    "employee": "Employee"
+  },
+  "intervention_status": {
+    "traveling": "En Route",
+    "in_progress": "In Progress",
+    "completed": "Completed"
+  },
+  "category": {
+    "network_support": "Network Support",
+    "field_intervention": "Field Intervention",
+    "equipment_request": "Equipment Request",
+    "system_access": "System Access",
+    "software_support": "Software Support",
+    "account_management": "Account Management"
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",
@@ -13,31 +77,27 @@
     "success": "Success",
     "yes": "Yes",
     "no": "No",
-    "confirm": "Confirm"
-  },
-  "sidebar": {
-    "dashboard": "Dashboard",
-    "tickets": "Tickets",
-    "analytics": "Analytics",
-    "users": "Users",
-    "interventions": "Interventions",
-    "notifications": "Notifications",
-    "ratings": "Ratings",
-    "technicians": "Technicians",
-    "categories": "Categories",
-    "profile": "Profile"
-  },
-  "topbar": {
-    "profile": "Profile",
-    "settings": "Settings",
-    "logout": "Log out"
+    "confirm": "Confirm",
+    "back": "Back",
+    "view_all": "View all",
+    "clear_filters": "Clear filters",
+    "all": "All",
+    "status": "Status",
+    "priority": "Priority",
+    "category": "Category",
+    "role": "Role",
+    "date": "Date"
   },
   "tickets": {
+    "title": "Tickets",
+    "newTicket": "New Ticket",
+    "status": "Status",
+    "priority": "Priority",
+    "create": "Create Ticket",
     "my_assigned": "My Assigned Tickets",
     "queue": "Ticket Queue",
     "tech_desc": "Manage and update support requests assigned directly to you.",
     "queue_desc": "Overview and manage all internal tickets.",
-    "create": "Create Ticket",
     "all_requests": "All Requests",
     "priority_all": "Priority: All",
     "category_all": "Category: All",
@@ -56,6 +116,72 @@
     "no_tickets_filter": "Try adjusting or clearing your filters.",
     "unassigned": "Unassigned",
     "overdue": "Overdue"
+  },
+  "interventions": {
+    "title": "Interventions",
+    "sub_tech": "Your field assignments",
+    "sub_all": "All technician field interventions",
+    "assign_technician": "Assign Technician",
+    "total_interventions": "Total Interventions",
+    "active": "Active",
+    "completed": "Completed",
+    "search_placeholder": "Search interventions...",
+    "loading": "Loading interventions...",
+    "no_interventions": "No interventions found.",
+    "access_restricted": "Access restricted.",
+    "ticket_num": "Ticket #",
+    "closing_report_req": "Closing report — required to mark complete...",
+    "closing_report_error": "Add a closing report note before marking this complete.",
+    "notes_placeholder": "Notes...",
+    "updating": "Updating...",
+    "mark_as": "Mark as",
+    "updated": "Updated",
+    "target_ticket": "Target Ticket",
+    "select_unassigned": "Select an unassigned ticket...",
+    "assign_to": "Assign To",
+    "select_technician": "Select a technician...",
+    "assignment_notes": "Assignment Notes (Optional)",
+    "context_placeholder": "Provide context for the technician...",
+    "confirm_assignment": "Confirm Assignment",
+    "assigning": "Assigning..."
+  },
+  "technicians": {
+    "title": "Technicians",
+    "subtitle": "Manage field technicians and workload distribution",
+    "add_technician": "Add Technician",
+    "search_placeholder": "Search technicians by name or email...",
+    "loading": "Loading technicians...",
+    "no_technicians": "No technicians found.",
+    "total_technicians": "Total Technicians",
+    "active_now": "Active Field Techs",
+    "rating_avg": "Average Rating",
+    "assignments": "Assigned Interventions",
+    "zone": "Assigned Zone",
+    "no_zone": "No zone assigned"
+  },
+  "users": {
+    "title": "User Management",
+    "subtitle": "Manage all system users, roles and active statuses",
+    "add_user": "Add User",
+    "search_placeholder": "Search users...",
+    "activate_selected": "Activate Selected",
+    "deactivate_selected": "Deactivate Selected",
+    "change_role": "Change Role",
+    "user_details": "User Details",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "status": "Status",
+    "actions": "Actions"
+  },
+  "categories": {
+    "title": "Category Management",
+    "subtitle": "Manage ticket categories and SLA response windows",
+    "add_category": "Add Category",
+    "category_name": "Category Name",
+    "slug": "Slug",
+    "description": "Description",
+    "actions": "Actions"
   },
   "profile": {
     "title": "My Profile",

@@ -12,6 +12,7 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-card-border: var(--card-border);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
@@ -47,16 +48,21 @@
   --radius-2xl: calc(var(--radius) * 1.8);
 }
 
-/* ── Minimalist Light Theme ── */
+/* ── Minimalist Smooth Light Theme ── */
 :root {
   color-scheme: light;
-  /* 1. Background: Soft Pearl */
-  --background:         oklch(0.99 0.005 270);
+  /* 1. Background: Soft Off-White Pearl */
+  --background:         oklch(0.985 0.005 270);
   --foreground:         oklch(0.20 0.02 270);
   --card:               oklch(1 0 0);
   --card-foreground:    oklch(0.20 0.02 270);
   --popover:            oklch(1 0 0);
   --popover-foreground: oklch(0.20 0.02 270);
+  
+  /* Smooth, gentle card border (soft on the eyes) */
+  --card-border:        oklch(0.90 0.015 270 / 80%);
+  --card-border-hover:  oklch(0.50 0.20 270 / 35%);
+  --card-border-width:  1px;
   
   /* 2. Primary: Royal Blue-Violet */
   --primary:            oklch(0.50 0.20 270);
@@ -74,7 +80,7 @@
   
   --destructive:        oklch(0.60 0.20 25);
   
-  --border:             oklch(0.93 0.01 270);
+  --border:             oklch(0.92 0.012 270 / 75%);
   --input:              oklch(0.93 0.01 270);
   --ring:               oklch(0.50 0.20 270);
   
@@ -92,7 +98,7 @@
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent:     oklch(0.96 0.01 270);
   --sidebar-accent-foreground: oklch(0.20 0.02 270);
-  --sidebar-border:     oklch(0.93 0.01 270);
+  --sidebar-border:     oklch(0.92 0.012 270 / 75%);
   --sidebar-ring:       oklch(0.50 0.20 270);
 
   /* status colors - softer, pastel-like tints */
@@ -108,7 +114,7 @@
   --priority-critical:  oklch(0.65 0.18 25);
 }
 
-/* ── Dark mode (optional fallback) ── */
+/* ── Dark mode (Smooth gentle border) ── */
 .dark {
   color-scheme: dark;
   --background:        oklch(0.12 0.02 270);
@@ -117,6 +123,11 @@
   --card-foreground:   oklch(0.98 0.01 270);
   --popover:           oklch(0.16 0.02 270);
   --popover-foreground: oklch(0.98 0.01 270);
+  
+  --card-border:       rgba(255, 255, 255, 0.10);
+  --card-border-hover: rgba(147, 197, 253, 0.35);
+  --card-border-width: 1px;
+
   --primary:           oklch(0.65 0.18 270);
   --primary-foreground: oklch(0.12 0.02 270);
   --secondary:         oklch(0.65 0.20 40);
@@ -126,11 +137,11 @@
   --accent:            oklch(0.65 0.20 40);
   --accent-foreground: oklch(0.12 0.02 270);
   --destructive:       oklch(0.65 0.18 25);
-  --border:            oklch(1 0 0 / 8%);
+  --border:            rgba(255, 255, 255, 0.08);
   --input:             oklch(1 0 0 / 10%);
   --ring:              oklch(0.65 0.18 270);
   --sidebar:           oklch(0.12 0.02 270);
-  --sidebar-border:    oklch(1 0 0 / 8%);
+  --sidebar-border:    rgba(255, 255, 255, 0.08);
 }
 
 @layer base {
@@ -142,20 +153,61 @@
   }
 }
 
+@layer components {
+  /* Reusable smooth card outline utility class */
+  .card-border,
+  .card-container,
+  .app-card,
+  .card-style {
+    border-width: var(--card-border-width, 1px);
+    border-color: var(--card-border);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .card-border:hover,
+  .card-container:hover,
+  .app-card:hover,
+  .card-style:hover {
+    border-color: var(--card-border-hover);
+  }
+}
+
 @layer utilities {
   .shadow-soft {
     box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 0 3px rgba(0,0,0,0.02);
   }
   .shadow-glow {
-    box-shadow: 0 0 20px 0 rgba(var(--primary), 0.15);
+    box-shadow: 0 0 20px 0 rgba(99, 102, 241, 0.12);
+  }
+
+  /* Smooth card surface & gentle hover */
+  .bg-card,
+  [class*="bg-card/"],
+  [class*="bg-card "] {
+    border-color: var(--card-border);
+    border-width: var(--card-border-width, 1px);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  }
+
+  .bg-card:hover,
+  [class*="bg-card/"]:hover {
+    border-color: var(--card-border-hover);
+  }
+
+  /* Modals & Dialogs */
+  [role="dialog"] > div,
+  [role="alertdialog"],
+  .modal-container {
+    border-color: var(--card-border);
+    border-width: var(--card-border-width, 1px);
   }
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: oklch(0.7 0.01 260 / 60%); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0.01 260 / 80%); }
+::-webkit-scrollbar-thumb { background: oklch(0.7 0.01 260 / 50%); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0.01 260 / 70%); }
 
 /* Notification dropdown animation */
 @keyframes fadeSlideDown {
@@ -169,6 +221,50 @@
   10% { opacity: 0.5; }
   90% { opacity: 0.5; }
   100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* Floating ribbon loops animation */
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  50% { transform: translateY(-10px) rotate(1deg) scale(1.01); }
+}
+
+@keyframes floatReverse {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  50% { transform: translateY(8px) rotate(-1deg) scale(0.99); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 12s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: floatReverse 14s ease-in-out infinite;
+}
+
+/* Fluid wave ribbon animations */
+@keyframes waveFlow {
+  0% { transform: translateY(0px) rotate(0deg) scale(1); }
+  33% { transform: translateY(-14px) rotate(1.5deg) scale(1.02); }
+  66% { transform: translateY(10px) rotate(-1deg) scale(0.98); }
+  100% { transform: translateY(0px) rotate(0deg) scale(1); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.08); }
+}
+
+.animate-wave-flow {
+  animation: waveFlow 16s ease-in-out infinite;
+}
+
+.animate-wave-flow-reverse {
+  animation: waveFlow 20s ease-in-out infinite reverse;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 10s ease-in-out infinite;
 }
 
 /* Confirm dialog animations */

@@ -83,7 +83,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         />
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-card/80 backdrop-blur-md md:rounded-2xl shadow-soft relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-card/80 backdrop-blur-md md:rounded-2xl shadow-soft card-border relative z-10">
         <Topbar
           onMenuClick={toggleSidebar}
           title={title}

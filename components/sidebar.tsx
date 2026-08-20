@@ -4,10 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Compass, Ticket, Users, Radar,
-  Zap, RadioReceiver, LogOut, Radio, ChevronRight, X, Award, UserCircle
+  Zap, RadioReceiver, LogOut, Radio, ChevronRight, X, Award, UserCircle, Tags
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { ROLE_LABELS } from '@/lib/helpers'
+import { ROLE_LABELS, getHomeRoute } from '@/lib/helpers'
 import { getInitials } from '@/lib/helpers'
 import { useLanguage } from '@/lib/i18n/language-context'
 import type { Role } from '@/lib/types'
@@ -26,7 +26,7 @@ const NAV_ITEMS: NavItem[] = [
     href:  '/dashboard',
     label: 'Dashboard',
     icon:  <Compass className="w-4 h-4" />,
-    roles: ['admin', 'support_agent', 'technician', 'employee'],
+    roles: ['admin', 'support_agent'],
   },
   {
     href:  '/tickets',
@@ -39,6 +39,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Interventions',
     icon:  <Zap className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician'],
+  },
+      {
+    href:  '/technicians',
+    label: 'technicians',
+    icon:  <Tags className="w-4 h-4" />,
+    roles: ['admin' , 'support_agent'],
   },
   {
     href:  '/analytics',
@@ -59,6 +65,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['admin'],
   },
   {
+    href:  '/categories',
+    label: 'Categories',
+    icon:  <Tags className="w-4 h-4" />,
+    roles: ['admin'],
+  },
+  {
     href:  '/notifications',
     label: 'Notifications',
     icon:  <RadioReceiver className="w-4 h-4" />,
@@ -70,6 +82,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:  <UserCircle className="w-4 h-4" />,
     roles: ['admin', 'support_agent', 'technician', 'employee'],
   },
+
 ]
 
 interface SidebarProps {
@@ -102,13 +115,13 @@ export default function Sidebar({ open, onClose, unreadCount = 0 }: SidebarProps
         className={cn(
           'fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-sidebar/95 backdrop-blur-md',
           'transition-all duration-300 ease-out',
-          'lg:relative lg:translate-x-0 lg:z-auto lg:rounded-2xl lg:shadow-soft',
+          'lg:relative lg:translate-x-0 lg:z-auto lg:rounded-2xl lg:shadow-soft card-border',
           open ? 'translate-x-0 shadow-soft' : '-translate-x-full'
         )}
       >
         {/* Header */}
         <div className="flex items-center justify-between h-16 px-5 shrink-0">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href={getHomeRoute(user.role)} className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-glow">
               <Radio className="w-4 h-4 text-primary-foreground" />
             </div>

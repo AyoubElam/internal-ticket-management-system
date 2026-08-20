@@ -1,7 +1,24 @@
 export type Role = 'admin' | 'support_agent' | 'technician' | 'employee'
 
 export type TicketStatus = 'created' | 'pending_assignment' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'cancelled'
-export type TicketCategory = 'network_support' | 'field_intervention' | 'equipment_request' | 'system_access'
+
+// Category is now dynamic (backed by the `categories` table) rather than a
+// fixed union — new categories can be added via the DB with zero frontend
+// deploys. Validity is enforced server-side (resolveCategoryId in
+// tickets_controller.ts), not by the type system. Use the `Category`
+// interface below when you need the full object (label, sla, etc.) — this
+// alias just documents that a plain string here is a category slug.
+export type TicketCategory = string
+
+export interface Category {
+  id: number
+  slug: string
+  label: string
+  slaHours: number | null
+  isActive: boolean
+  sortOrder: number
+}
+
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical'
 export type InterventionStatus = 'traveling' | 'in_progress' | 'completed'
 // lib/types.ts
@@ -31,6 +48,7 @@ export interface Ticket {
   title: string
   description: string
   category: TicketCategory
+  categoryLabel?: string
   priority: TicketPriority
   status: TicketStatus
   createdById: number

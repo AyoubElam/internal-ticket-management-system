@@ -37,13 +37,20 @@ export async function listInterventions(req: AuthRequest, res: Response, next: N
 
     const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+    // FIXED: tickets no longer has a plain `category` column — it's
+    // `category_id` (FK to categories.id) now. Join categories to get
+    // the slug back so the frontend's intervention.category still works
+    // unchanged; category_label is a bonus for anywhere that wants the
+    // human-readable label without a separate lookup.
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT i.*,
-         t.title AS ticket_title, t.priority, t.category,
+         t.title AS ticket_title, t.priority,
+         cat.slug AS category, cat.label AS category_label,
          CONCAT(u.first_name, ' ', u.last_name) AS technician_name
        FROM interventions i
        JOIN tickets t  ON t.id = i.ticket_id
        JOIN users   u  ON u.id = i.technician_id
+       LEFT JOIN categories cat ON cat.id = t.category_id
        ${whereSQL}
        ORDER BY i.updated_at DESC`,
       params
@@ -56,9 +63,9 @@ export async function listInterventions(req: AuthRequest, res: Response, next: N
 /* This is the ONLY place a technician gets assigned to a ticket.
    Ticket detail page's old direct PATCH assigned_to_id must not be used anymore.
 
-   CHANGED: this no longer creates the interventions row or fully assigns
-   the ticket immediately. It puts the ticket into 'pending_assignment'
-   and waits for the technician to accept/reject (see acceptAssignment /
+   This no longer creates the interventions row or fully assigns the
+   ticket immediately. It puts the ticket into 'pending_assignment' and
+   waits for the technician to accept/reject (see acceptAssignment /
    rejectAssignment below). The interventions row — the thing that
    actually tracks traveling/in_progress/completed — only gets created
    once the technician accepts, since there's no work to track before

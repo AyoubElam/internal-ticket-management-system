@@ -250,7 +250,7 @@ export default function ProfilePage() {
             </label>
             <input
               type="text"
-              value={ROLE_LABELS[user.role]}
+              value={t(`role.${user.role}`)}
               readOnly
               className="w-full px-3 py-2.5 bg-muted/30 border border-border rounded-lg text-sm text-muted-foreground cursor-not-allowed"
             />

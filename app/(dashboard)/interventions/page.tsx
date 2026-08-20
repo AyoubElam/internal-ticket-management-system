@@ -4,13 +4,13 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { Wrench, Search, Shield, Plus, X, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import { InterventionBadge, PriorityBadge } from '@/components/status-badge'
-import { timeAgo, getInitials, INTERVENTION_STATUS_LABELS } from '@/lib/helpers'
+import { timeAgo, getInitials } from '@/lib/helpers'
 import type { InterventionStatus, TicketPriority } from '@/lib/types'
 
 const ALL_STATUSES: InterventionStatus[] = ['traveling', 'in_progress', 'completed']
 
-// Forward transitions a technician can move an intervention through.
 const NEXT_INTERVENTION_STATUS: Record<InterventionStatus, InterventionStatus | null> = {
   traveling:   'in_progress',
   in_progress: 'completed',
@@ -36,6 +36,7 @@ type UnassignedTicket = { id: number; title: string; priority: TicketPriority }
 
 export default function InterventionsPage() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [filterStatus, setFilterStatus] = useState<InterventionStatus | 'all'>('all')
   const [search, setSearch] = useState('')
 
@@ -88,7 +89,7 @@ export default function InterventionsPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <Shield className="w-10 h-10 text-muted-foreground" />
-        <p className="text-muted-foreground text-sm">Access restricted.</p>
+        <p className="text-muted-foreground text-sm">{t('interventions.access_restricted')}</p>
       </div>
     )
   }
@@ -97,17 +98,17 @@ export default function InterventionsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Interventions</h1>
+          <h1 className="text-xl font-bold text-foreground">{t('interventions.title')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {isTechnician ? 'Your field assignments' : 'All technician field interventions'}
+            {isTechnician ? t('interventions.sub_tech') : t('interventions.sub_all')}
           </p>
         </div>
         {canManage && (
           <button
             onClick={() => setShowAssign(true)}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
           >
-            <Plus className="w-4 h-4" /> Assign Technician
+            <Plus className="w-4 h-4" /> {t('interventions.assign_technician')}
           </button>
         )}
       </div>
@@ -116,16 +117,16 @@ export default function InterventionsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground">Total Interventions</p>
+        <div className="bg-card border border-border rounded-xl p-4 shadow-soft">
+          <p className="text-xs text-muted-foreground">{t('interventions.total_interventions')}</p>
           <p className="text-2xl font-bold text-foreground mt-1">{interventions.length}</p>
         </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground">Active</p>
+        <div className="bg-card border border-border rounded-xl p-4 shadow-soft">
+          <p className="text-xs text-muted-foreground">{t('interventions.active')}</p>
           <p className="text-2xl font-bold text-amber-400 mt-1">{totalActive}</p>
         </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground">Completed</p>
+        <div className="bg-card border border-border rounded-xl p-4 shadow-soft">
+          <p className="text-xs text-muted-foreground">{t('interventions.completed')}</p>
           <p className="text-2xl font-bold text-green-400 mt-1">{totalCompleted}</p>
         </div>
       </div>
@@ -136,7 +137,7 @@ export default function InterventionsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search interventions…"
+            placeholder={t('interventions.search_placeholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-card border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
@@ -147,13 +148,13 @@ export default function InterventionsPage() {
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors capitalize ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 filterStatus === s
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-primary text-primary-foreground font-bold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
             >
-              {s === 'all' ? 'All' : INTERVENTION_STATUS_LABELS[s as InterventionStatus]}
+              {s === 'all' ? t('common.all') : t(`intervention_status.${s}`)}
             </button>
           ))}
         </div>
@@ -163,11 +164,11 @@ export default function InterventionsPage() {
       <div className="space-y-3">
         {loading ? (
           <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground text-sm">
-            Loading…
+            {t('interventions.loading')}
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground text-sm">
-            No interventions found.
+            {t('interventions.no_interventions')}
           </div>
         ) : filtered.map(intervention => (
           <InterventionCard
@@ -189,6 +190,7 @@ export default function InterventionsPage() {
 function InterventionCard({
   intervention, canUpdate, onUpdated,
 }: { intervention: Intervention; canUpdate: boolean; onUpdated: () => void }) {
+  const { t } = useLanguage()
   const [notes, setNotes] = useState(intervention.notes || '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -198,7 +200,7 @@ function InterventionCard({
   async function advance() {
     if (!nextStatus) return
     if (nextStatus === 'completed' && !notes.trim()) {
-      setErr('Add a closing report note before marking this complete.')
+      setErr(t('interventions.closing_report_error'))
       return
     }
     setSaving(true)
@@ -221,7 +223,7 @@ function InterventionCard({
   }
 
   return (
-    <div className="bg-card border-none shadow-sm rounded-2xl p-6 hover:shadow-md hover:ring-1 hover:ring-primary/20 transition-all duration-200">
+    <div className="bg-card border border-border/40 shadow-soft rounded-2xl p-6 hover:shadow-md transition-all duration-200">
       <div className="flex flex-col md:flex-row gap-5 md:items-start">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
           intervention.status === 'completed'  ? 'bg-green-500/10' :
@@ -238,9 +240,9 @@ function InterventionCard({
             <div>
               <Link
                 href={`/tickets/${intervention.ticket_id}`}
-                className="text-sm font-semibold text-foreground hover:text-primary transition-colors"
+                className="text-sm font-bold text-foreground hover:text-primary transition-colors"
               >
-                Ticket #{intervention.ticket_id}
+                {t('interventions.ticket_num')}{intervention.ticket_id}
                 {intervention.ticket_title && ` — ${intervention.ticket_title}`}
               </Link>
             </div>
@@ -261,7 +263,7 @@ function InterventionCard({
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder={nextStatus === 'completed' ? 'Closing report — required to mark complete…' : 'Notes…'}
+                placeholder={nextStatus === 'completed' ? t('interventions.closing_report_req') : t('interventions.notes_placeholder')}
                 rows={2}
                 className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
               />
@@ -270,10 +272,10 @@ function InterventionCard({
                 <button
                   onClick={advance}
                   disabled={saving}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60"
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  {saving ? 'Updating…' : `Mark as ${INTERVENTION_STATUS_LABELS[nextStatus]}`}
+                  {saving ? t('interventions.updating') : `${t('interventions.mark_as')} ${t(`intervention_status.${nextStatus}`)}`}
                 </button>
               )}
             </div>
@@ -287,7 +289,7 @@ function InterventionCard({
               <span className="text-xs text-muted-foreground">{intervention.technician_name}</span>
             </div>
             <span className="text-[11px] text-muted-foreground ml-auto">
-              Updated {timeAgo(intervention.updated_at)}
+              {t('interventions.updated')} {timeAgo(intervention.updated_at)}
             </span>
           </div>
         </div>
@@ -296,9 +298,8 @@ function InterventionCard({
   )
 }
 
-// Assign a technician to a ticket — this is now the ONLY assignment path.
-// It creates the interventions row AND sets the ticket's assigned_to_id/status.
 function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned: () => void }) {
+  const { t } = useLanguage()
   const [technicians, setTechnicians] = useState<Technician[]>([])
   const [openTickets, setOpenTickets] = useState<UnassignedTicket[]>([])
   const [ticketId, setTicketId] = useState('')
@@ -319,7 +320,7 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
     ]).then(([techData, ticketData]) => {
       setTechnicians(Array.isArray(techData) ? techData : techData.data || [])
       setOpenTickets(ticketData.data || [])
-    }).catch(() => { /* silent — selects just stay empty */ })
+    }).catch(() => {})
   }, [])
 
   async function handleSubmit() {
@@ -347,7 +348,7 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex justify-end z-[100] transition-opacity">
       <div className="bg-card border-l border-border/40 w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-6 border-b border-border/40 shrink-0">
-          <h2 className="text-lg font-bold text-foreground">Assign Technician</h2>
+          <h2 className="text-lg font-bold text-foreground">{t('interventions.assign_technician')}</h2>
           <button onClick={onClose} className="p-2 -mr-2 text-muted-foreground hover:bg-muted rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
@@ -357,13 +358,13 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
           {err && <div className="bg-destructive/10 text-destructive text-sm font-medium p-4 rounded-xl">{err}</div>}
 
           <div className="space-y-2.5">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Target Ticket</label>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{t('interventions.target_ticket')}</label>
             <select
               value={ticketId}
               onChange={e => setTicketId(e.target.value)}
               className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer shadow-inner appearance-none"
             >
-              <option value="">Select an unassigned ticket…</option>
+              <option value="">{t('interventions.select_unassigned')}</option>
               {openTickets.map(t => (
                 <option key={t.id} value={t.id}>
                   #{t.id} — {t.title} ({t.priority})
@@ -373,13 +374,13 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
           </div>
 
           <div className="space-y-2.5">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Assign To</label>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{t('interventions.assign_to')}</label>
             <select
               value={technicianId}
               onChange={e => setTechnicianId(e.target.value)}
               className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer shadow-inner appearance-none"
             >
-              <option value="">Select a technician…</option>
+              <option value="">{t('interventions.select_technician')}</option>
               {technicians.map(t => (
                 <option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>
               ))}
@@ -387,12 +388,12 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
           </div>
 
           <div className="space-y-2.5">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Assignment Notes (Optional)</label>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{t('interventions.assignment_notes')}</label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={4}
-              placeholder="Provide context for the technician..."
+              placeholder={t('interventions.context_placeholder')}
               className="w-full px-4 py-3.5 bg-muted/50 border-none rounded-xl text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none shadow-inner"
             />
           </div>
@@ -403,14 +404,14 @@ function AssignModal({ onClose, onAssigned }: { onClose: () => void; onAssigned:
             onClick={onClose}
             className="flex-1 py-3 bg-muted text-muted-foreground font-bold text-sm rounded-xl hover:bg-muted/80 hover:text-foreground transition-colors"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || !ticketId || !technicianId}
             className="flex-1 py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
           >
-            {submitting ? 'Assigning…' : 'Confirm Assignment'}
+            {submitting ? t('interventions.assigning') : t('interventions.confirm_assignment')}
           </button>
         </div>
       </div>

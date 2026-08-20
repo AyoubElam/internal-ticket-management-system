@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, Clock, TrendingUp, ShieldAlert, Shield } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
@@ -47,12 +48,20 @@ function isOverdue(t: Ticket): boolean {
 export default function DashboardPage() {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const router = useRouter()
   const [kpi, setKpi] = useState<Kpi | null>(null)
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const isStaff = user ? ['admin', 'support_agent'].includes(user.role) : false
+
+  // Silently redirect non-staff to /tickets
+  useEffect(() => {
+    if (user && !isStaff) {
+      router.replace('/tickets')
+    }
+  }, [user, isStaff, router])
 
   useEffect(() => {
     if (!isStaff) return
@@ -83,9 +92,8 @@ export default function DashboardPage() {
 
   if (!user || !isStaff) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <Shield className="w-10 h-10 text-muted-foreground" />
-        <p className="text-muted-foreground text-sm">{t('dashboard.access_restricted')}</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }

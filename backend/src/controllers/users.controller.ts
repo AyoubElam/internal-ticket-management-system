@@ -12,14 +12,17 @@ export async function listUsers(req: AuthRequest, res: Response, next: NextFunct
     const where: string[] = []
     const params: unknown[] = []
 
-    if (role)      { where.push('role = ?');      params.push(role) }
-    if (is_active) { where.push('is_active = ?'); params.push(is_active === 'true' ? 1 : 0) }
+    if (role)      { where.push('u.role = ?');      params.push(role) }
+    if (is_active) { where.push('u.is_active = ?'); params.push(is_active === 'true' ? 1 : 0) }
 
     const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT id, email, first_name, last_name, role, is_active, created_at
-       FROM users ${whereSQL} ORDER BY created_at DESC`,
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.is_active, u.created_at,
+         (SELECT COUNT(*) FROM tickets tk
+          WHERE tk.assigned_to_id = u.id
+            AND tk.status IN ('assigned', 'in_progress')) AS active_tickets
+       FROM users u ${whereSQL} ORDER BY u.created_at DESC`,
       params
     )
     res.json(rows)

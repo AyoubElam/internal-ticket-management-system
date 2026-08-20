@@ -9,11 +9,12 @@ import {
   History, PlusCircle, UserCheck, FileText, UserPlus, Users, Check, RotateCcw, RefreshCw,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/i18n/language-context'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { TechnicianSelect } from '@/components/technician-select'
 import AttachmentsPanel from '@/components/attachments-panel'
-import { formatDateTime, timeAgo, getInitials, ROLE_LABELS } from '@/lib/helpers'
+import { formatDateTime, timeAgo, getInitials } from '@/lib/helpers'
 import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -96,6 +97,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const { id } = use(params)
   const router = useRouter()
   const { user } = useAuth()
+  const { t } = useLanguage()
 
   const [ticket, setTicket]   = useState<Ticket | null>(null)
   const [loading, setLoading] = useState(true)

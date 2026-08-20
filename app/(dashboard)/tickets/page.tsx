@@ -22,16 +22,17 @@ import {
   Users
 } from 'lucide-react'
 import { StatusBadge, PriorityBadge, CategoryBadge } from '@/components/status-badge'
-import { CATEGORY_LABELS, STATUS_LABELS, timeAgo, getInitials } from '@/lib/helpers'
+import { STATUS_LABELS, timeAgo, getInitials } from '@/lib/helpers'
 import { useAuth } from '@/lib/auth-context'
 import { useLanguage } from '@/lib/i18n/language-context'
-import type { TicketCategory, TicketPriority, TicketStatus } from '@/lib/types'
+import type { TicketCategory, TicketPriority, TicketStatus, Category } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Ticket = {
   id: number
   title: string
   category: string
+  category_label?: string
   priority: string
   status: string
   created_at: string
@@ -43,7 +44,6 @@ type Ticket = {
 
 type Technician = { id: number; first_name: string; last_name: string }
 
-const CATEGORIES: TicketCategory[] = ['network_support', 'field_intervention', 'equipment_request', 'system_access']
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'critical']
 const STATUSES: TicketStatus[] = ['created', 'pending_assignment' as TicketStatus, 'assigned', 'in_progress', 'resolved', 'closed', 'cancelled']
 
@@ -81,6 +81,9 @@ export default function TicketsPage() {
 
   const [technicians, setTechnicians] = useState<Technician[]>([])
 
+  // Categories now come from the API instead of a hardcoded array.
+  const [categories, setCategories] = useState<Category[]>([])
+
   // Filters
   const [status, setStatus] = useState<string>('')
   const [priority, setPriority] = useState<string>('')
@@ -100,6 +103,19 @@ export default function TicketsPage() {
   const [bulkAssignTechId, setBulkAssignTechId] = useState('')
 
   const hasActiveFilters = !!(status || priority || category || period !== 'all')
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch('http://localhost:4000/api/categories', { headers: authHeaders() })
+        const data = await res.json()
+        if (res.ok) setCategories(data)
+      } catch {
+        // silent fail — filter just won't show category options
+      }
+    }
+    fetchCategories()
+  }, [])
 
   useEffect(() => {
     if (!user || !['admin', 'support_agent'].includes(user.role)) return
@@ -294,7 +310,7 @@ export default function TicketsPage() {
   const canFilter = user ? ['admin', 'support_agent'].includes(user.role) : false
   const canAct = user ? ['admin', 'support_agent'].includes(user.role) : false
   const canBulk = canAct
-  const showPeriodFilter = canFilter || isTechnician
+const showPeriodFilter = canFilter || isTechnician || user?.role === 'employee'
 
   // Client-side period filter
   const periodFilteredTickets = (() => {
@@ -411,8 +427,8 @@ export default function TicketsPage() {
                 className="px-4 py-2 bg-card/80 border border-border/20 rounded-xl text-xs font-bold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:text-foreground transition-all duration-300 appearance-none shadow-soft hover:shadow-glow cursor-pointer"
               >
                 <option value="">{t('tickets.category_all')}</option>
-                {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>
+                {categories.map(c => (
+                  <option key={c.slug} value={c.slug}>{c.label}</option>
                 ))}
               </select>
 
@@ -608,7 +624,7 @@ export default function TicketsPage() {
                       </Link>
 
                       <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <CategoryBadge category={ticket.category as any} size="sm" />
+                        <CategoryBadge category={ticket.category} label={ticket.category_label} size="sm" />
                         <PriorityBadge priority={ticket.priority as any} size="sm" />
                         <StatusBadge status={ticket.status as any} size="sm" />
                       </div>

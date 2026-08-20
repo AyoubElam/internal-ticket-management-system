@@ -19,6 +19,17 @@ const STATUS_VERB: Record<string, string> = {
   cancelled:   'cancelled',
 }
 
+// Resolves a category slug (e.g. 'network_support') to its categories.id.
+// Returns null if the slug doesn't exist or is inactive, so callers can
+// respond with a 400 instead of inserting a broken FK reference.
+async function resolveCategoryId(slug: string): Promise<number | null> {
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(
+    `SELECT id FROM categories WHERE slug = ? AND is_active = 1 LIMIT 1`,
+    [slug]
+  )
+  return rows[0]?.id ?? null
+}
+
 async function notifyUsers(userIds: number[], message: string): Promise<void> {
   const unique = [...new Set(userIds)].filter(Boolean)
   if (!unique.length) return
@@ -71,19 +82,25 @@ export async function listTickets(req: AuthRequest, res: Response, next: NextFun
 
     if (status)   { where.push('t.status = ?');   params.push(status) }
     if (priority) { where.push('t.priority = ?'); params.push(priority) }
-    if (category) { where.push('t.category = ?'); params.push(category) }
+    if (category) { where.push('cat.slug = ?');   params.push(category) }
 
     const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+    // category is exposed to the frontend as the old slug string
+    // ('network_support' etc.) via the categories join — nothing in the
+    // API response shape changes even though storage moved to category_id.
     // location_label (t.location_label, straight off the ticket) is the
     // display value — the exact place the employee picked.
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT
          t.*,
+         cat.slug AS category,
+         cat.label AS category_label,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
          CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
          COUNT(c.id) AS comments_count
        FROM tickets t
+       LEFT JOIN categories cat ON cat.id = t.category_id
        LEFT JOIN users  cb ON cb.id = t.created_by_id
        LEFT JOIN users  ab ON ab.id = t.assigned_to_id
        LEFT JOIN comments c ON c.ticket_id = t.id
@@ -94,7 +111,7 @@ export async function listTickets(req: AuthRequest, res: Response, next: NextFun
       [...params, lim, offset]
     )
     const [[{ total }]] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT COUNT(*) AS total FROM tickets t ${whereSQL}`,
+      `SELECT COUNT(*) AS total FROM tickets t LEFT JOIN categories cat ON cat.id = t.category_id ${whereSQL}`,
       params
     )
 
@@ -109,6 +126,8 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
 
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT t.*,
+         cat.slug AS category,
+         cat.label AS category_label,
          CONCAT(cb.first_name, ' ', cb.last_name) AS created_by_name,
          cb.role AS created_by_role,
          CONCAT(ab.first_name, ' ', ab.last_name) AS assigned_to_name,
@@ -116,6 +135,7 @@ export async function getTicket(req: AuthRequest, res: Response, next: NextFunct
          r.rating  AS employee_rating,
          r.comment AS rating_comment
        FROM tickets t
+       LEFT JOIN categories cat ON cat.id = t.category_id
        LEFT JOIN users cb ON cb.id = t.created_by_id
        LEFT JOIN users ab ON ab.id = t.assigned_to_id
        LEFT JOIN ticket_ratings r ON r.ticket_id = t.id
@@ -185,10 +205,16 @@ export async function createTicket(req: AuthRequest, res: Response, next: NextFu
       category: TicketCategory; priority: TicketPriority
     }
 
+    const categoryId = await resolveCategoryId(category)
+    if (!categoryId) {
+      res.status(400).json({ error: 'Invalid category.' })
+      return
+    }
+
     const [result] = await pool.query<mysql.ResultSetHeader>(
-      `INSERT INTO tickets (title, description, category, priority, status, created_by_id)
+      `INSERT INTO tickets (title, description, category_id, priority, status, created_by_id)
        VALUES (?, ?, ?, ?, 'created', ?)`,
-      [title, description, category, priority, req.user!.userId]
+      [title, description, categoryId, priority, req.user!.userId]
     )
 
     const ticketId = result.insertId
@@ -280,7 +306,11 @@ export async function updateTicket(req: AuthRequest, res: Response, next: NextFu
     if (status)                  { fields.push('status = ?');         params.push(status) }
     if (isAdmin && title)              { fields.push('title = ?');          params.push(title) }
     if (isAdmin && description)        { fields.push('description = ?');    params.push(description) }
-    if (isAdmin && category)           { fields.push('category = ?');       params.push(category) }
+    if (isAdmin && category) {
+      const categoryId = await resolveCategoryId(category)
+      if (!categoryId) { res.status(400).json({ error: 'Invalid category.' }); return }
+      fields.push('category_id = ?'); params.push(categoryId)
+    }
     if (isAdmin && priority)           { fields.push('priority = ?');       params.push(priority) }
 
     if (status === 'resolved' || status === 'closed') {
@@ -409,7 +439,11 @@ export async function editTicket(req: AuthRequest, res: Response, next: NextFunc
 
     if (title)       { fields.push('title = ?');       params.push(title) }
     if (description) { fields.push('description = ?'); params.push(description) }
-    if (category)    { fields.push('category = ?');    params.push(category) }
+    if (category) {
+      const categoryId = await resolveCategoryId(category)
+      if (!categoryId) { res.status(400).json({ error: 'Invalid category.' }); return }
+      fields.push('category_id = ?'); params.push(categoryId)
+    }
     if (priority)    { fields.push('priority = ?');     params.push(priority) }
 
     if (!fields.length) { res.status(400).json({ error: 'No fields to update.' }); return }
